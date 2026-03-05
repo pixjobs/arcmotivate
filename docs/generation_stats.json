@@ -1,0 +1,7 @@
+{
+    "model": "gemini-3.1-pro-preview",
+    "total_api_calls": 20,
+    "prompt_tokens": 26886,
+    "output_tokens": 32774,
+    "total_tokens": 115980
+}
