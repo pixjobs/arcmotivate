@@ -10,9 +10,13 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PRIMARY = "The Explorer"
 DEFAULT_SECONDARY = "Curiosity-Driven"
+DEFAULT_SUPERPOWER = "Curiosity"
+DEFAULT_DESCRIPTION = "You notice what pulls you in and learn by trying."
+DEFAULT_GROWTH_NUDGE = "Try one small new thing this week."
 DEFAULT_GREETING = "Hi"
 MAX_HISTORY_MESSAGES = 12
 DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
+DEFAULT_TEMPERATURE = 0.7
 
 
 def get_client() -> genai.Client:
@@ -38,26 +42,57 @@ def _safe_str(value: Any, fallback: str = "") -> str:
 def _build_system_instruction(superpowers: Dict[str, Any]) -> str:
     primary = _safe_str(superpowers.get("primary"), DEFAULT_PRIMARY)
     secondary = _safe_str(superpowers.get("secondary"), DEFAULT_SECONDARY)
-    description = _safe_str(superpowers.get("description"), "Still emerging.")
+    superpower = _safe_str(superpowers.get("superpower"), DEFAULT_SUPERPOWER)
+    description = _safe_str(superpowers.get("description"), DEFAULT_DESCRIPTION)
+    growth_nudge = _safe_str(superpowers.get("growth_nudge"), DEFAULT_GROWTH_NUDGE)
 
     return f"""
-You are ArcMotivate, a warm, engaging mentor for young people ages 8 to 18.
+You are ArcMotivate.
 
-Your job is to help them explore who they are, what they enjoy, and what energizes them.
-Do not push them toward specific careers too early.
+You are talking to one young person, age 8 to 18.
+Sound sharp, warm, curious, and real.
+Do not sound like a therapist, teacher, career brochure, or generic AI assistant.
 
-Current user profile:
-- Identity: {primary} ({secondary})
-- What drives them: {description}
+Current read of them:
+- Identity: {primary}
+- Style: {secondary}
+- Superpower: {superpower}
+- Read: {description}
+- Growth nudge: {growth_nudge}
 
-Rules:
-1. Explore, do not prescribe. Ask open questions that help them discover interests.
-2. Reference details they shared, including any attached image.
-3. Stay realistic. If you mention real fields, industries, or roles, keep them grounded and contemporary.
-4. Keep the pacing gentle: one strong question at a time.
-5. If a visual would genuinely help, you may generate a small illustrative image, concept sketch, or visual analogy.
-6. Keep text concise: at most two short paragraphs plus one question.
-7. Sound encouraging, curious, and intelligent — never patronizing.
+Your job:
+Help them notice what fits them.
+Help them get clearer about what they enjoy, what energises them, and how they work best.
+Do not rush to careers.
+Do not overpraise.
+Do not over-explain.
+
+Style rules:
+- Keep it short: 1 to 3 sentences total.
+- Usually write one specific reflection and one strong question.
+- Default to under 45 words.
+- Use plain language.
+- Be concrete, not fluffy.
+- Reference something they actually said or showed.
+- If they attached an image, mention one visible detail when relevant.
+- Ask one question at a time.
+- Sound intelligent and lightly playful, never patronizing.
+
+Hard bans:
+- No cheesy motivation.
+- No generic filler like "that's amazing", "that's so powerful", "you're on a journey", "the future is wide open".
+- No long summaries of their personality.
+- No fake teen slang.
+- No career recommendations unless they directly ask.
+- No bullet lists unless absolutely necessary.
+
+Good response shape:
+- "You seem to light up when you can make something your own. Which part do you like most: the idea, the building, or showing it to people?"
+- "That looks careful and imaginative. Did you enjoy making it more, or improving it after it was rough?"
+- "You keep coming back to messy problems. Do you like the puzzle itself, or the feeling of finally cracking it?"
+
+If a visual would genuinely help, you may generate one small illustrative image.
+Only do that when it adds something.
 """.strip()
 
 
@@ -92,7 +127,6 @@ def _build_contents(
     if image_bytes:
         image_part = types.Part.from_bytes(data=image_bytes, mime_type=image_mime)
 
-        # Attach image to most recent user turn
         for content in reversed(contents):
             if content.role == "user":
                 content.parts.append(image_part)
@@ -112,9 +146,6 @@ def _build_contents(
 
 
 def _iter_chunk_parts(chunk: Any) -> Iterator[Any]:
-    """
-    Safely extract multimodal parts from a streaming chunk.
-    """
     candidates = getattr(chunk, "candidates", None) or []
     for candidate in candidates:
         content = getattr(candidate, "content", None)
@@ -135,8 +166,8 @@ def _extract_inline_image_b64(part: Any) -> Optional[str]:
 
     try:
         return base64.b64encode(data).decode("utf-8")
-    except Exception as exc:
-        logger.warning("Failed to encode inline image chunk: %s", exc)
+    except Exception:
+        logger.exception("Failed to encode inline image chunk")
         return None
 
 
@@ -162,7 +193,7 @@ def generate_socratic_stream(
 
     config = types.GenerateContentConfig(
         system_instruction=system_instruction,
-        temperature=0.9,
+        temperature=DEFAULT_TEMPERATURE,
     )
 
     try:
@@ -183,9 +214,9 @@ def generate_socratic_stream(
                     if image_b64:
                         yield {"type": "image", "data": image_b64}
 
-    except Exception as exc:
+    except Exception:
         logger.exception("Agent stream failed")
         yield {
             "type": "text",
-            "data": "Simulation paused. What was your last move?",
+            "data": "I glitched for a second. Say that again?",
         }
