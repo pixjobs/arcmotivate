@@ -9,43 +9,50 @@ logger = logging.getLogger(__name__)
 def get_client():
     return genai.Client()
 
-def synthesize_blueprint(journey_data: List[Dict[str, Any]], superpowers: Dict[str, Any]) -> Dict[str, Any]:
-    """Updates the 'Future Blueprint' HUD based on the ongoing simulation."""
+def synthesize_single_tile(journey_data: List[Dict[str, Any]], superpowers: Dict[str, Any]) -> Dict[str, Any]:
+    """Generates a single multimodal Canvas Tile based on the latest interaction."""
     client = get_client()
     
-    user_inputs =[step.get("text", "") for step in journey_data if step.get("role") == "user"]
-    chat_summary = " | ".join(user_inputs)
+    # We really only need the last couple of turns to generate an insight
+    recent_history = journey_data[-4:]
+    history_text = "\n".join([f"{msg.get('role', 'user')}: {msg.get('text', '')}" for msg in recent_history])
     
     prompt = f"""
-    You are ArcMotivate's background analysis engine. Analyze this teenager's simulation choices.
-    Assigned Role: {superpowers.get('primary')}
-    User's Choices: {chat_summary}
+    You are ArcMotivate's background analysis engine. Analyze the latest moments in this teenager's simulation to generate exactly ONE new "Canvas Tile" representing a concrete discovery, skill, or quest.
     
-    Update their "Future Blueprint" JSON:
-    1. title: A cool, modern title (e.g. "Lead Systems Architect", "Creative Director").
-    2. analysis: A brief, encouraging 2-sentence summary of what their choices reveal about their strengths.
-    3. skills: Array of exactly 3 hard/soft skills they are demonstrating.
-    4. careers: Array of exactly 2 REAL-WORLD job titles that fit this path.
-    5. quest: One fun, free, real-world action they can take today (e.g. "Try building a basic website", "Sketch a prototype").
+    CRITICAL RULES: Ensure absolute realism. No patronizing tone. Do NOT generate silly, sci-fi, or "neo" job titles like "Sonic Engineer". Ground all insights in actual, contemporary industry practices.
+
+    Assigned Role: {superpowers.get('primary')}
+    Recent Interaction: {history_text}
+    
+    Generate exactly ONE JSON "Canvas Tile" with these exact keys:
+    1. "category": Pick ONE: "Skill Unlocked", "Trait Discovered", "Target Role", or "Quest Active".
+    2. "title": A super punchy, real-world title for this tile (e.g. "Agile Workflow", "Systems-Thinker", "UX Researcher", "Build a Wireframe").
+    3. "content": A 2-sentence description of exactly *why* they earned this tile based on the interaction.
+    4. "metadata": An array of exactly two specific metadata strings (e.g. ["Tool: Figma", "Difficulty: Beginner"]).
+    5. "image_prompt": A highly descriptive, visual pixel-art prompt to illustrate this specific tile.
     """
     
     try:
-        # Flash-Lite for speed
         response = client.models.generate_content(
-            model='gemini-3.1-flash-lite-preview',
+            model='gemini-3-flash-preview',
             contents=prompt,
             config=types.GenerateContentConfig(
+                temperature=0.7,
                 response_mime_type="application/json",
                 response_schema={
                     "type": "OBJECT",
                     "properties": {
+                        "category": {"type": "STRING"},
                         "title": {"type": "STRING"},
-                        "analysis": {"type": "STRING"},
-                        "skills": {"type": "ARRAY", "items": {"type": "STRING"}},
-                        "careers": {"type": "ARRAY", "items": {"type": "STRING"}},
-                        "quest": {"type": "STRING"}
+                        "content": {"type": "STRING"},
+                        "metadata": {
+                            "type": "ARRAY",
+                            "items": {"type": "STRING"}
+                        },
+                        "image_prompt": {"type": "STRING"}
                     },
-                    "required":["title", "analysis", "skills", "careers", "quest"]
+                    "required":["category", "title", "content", "metadata", "image_prompt"]
                 }
             )
         )
