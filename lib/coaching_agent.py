@@ -1,8 +1,18 @@
 import base64
-from typing import Dict, Any, List, Optional, Iterator
+import logging
+from typing import Any, Dict, Iterator, List, Optional
 
 from google import genai
 from google.genai import types
+
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_PRIMARY = "The Explorer"
+DEFAULT_SECONDARY = "Curiosity-Driven"
+DEFAULT_GREETING = "Hi"
+MAX_HISTORY_MESSAGES = 12
+DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
 
 
 def get_client() -> genai.Client:
@@ -18,6 +28,52 @@ def _normalize_role(role: str) -> str:
     return role
 
 
+def _safe_str(value: Any, fallback: str = "") -> str:
+    if value is None:
+        return fallback
+    text = str(value).strip()
+    return text if text else fallback
+
+
+def _build_system_instruction(superpowers: Dict[str, Any]) -> str:
+    primary = _safe_str(superpowers.get("primary"), DEFAULT_PRIMARY)
+    secondary = _safe_str(superpowers.get("secondary"), DEFAULT_SECONDARY)
+    description = _safe_str(superpowers.get("description"), "Still emerging.")
+
+    return f"""
+You are ArcMotivate, a warm, engaging mentor for young people ages 8 to 18.
+
+Your job is to help them explore who they are, what they enjoy, and what energizes them.
+Do not push them toward specific careers too early.
+
+Current user profile:
+- Identity: {primary} ({secondary})
+- What drives them: {description}
+
+Rules:
+1. Explore, do not prescribe. Ask open questions that help them discover interests.
+2. Reference details they shared, including any attached image.
+3. Stay realistic. If you mention real fields, industries, or roles, keep them grounded and contemporary.
+4. Keep the pacing gentle: one strong question at a time.
+5. If a visual would genuinely help, you may generate a small illustrative image, concept sketch, or visual analogy.
+6. Keep text concise: at most two short paragraphs plus one question.
+7. Sound encouraging, curious, and intelligent — never patronizing.
+""".strip()
+
+
+def _trim_chat_history(chat_history: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    cleaned: List[Dict[str, str]] = []
+
+    for msg in chat_history[-MAX_HISTORY_MESSAGES:]:
+        role = _normalize_role(msg.get("role", "user"))
+        text = _safe_str(msg.get("text"))
+        if not text:
+            continue
+        cleaned.append({"role": role, "text": text})
+
+    return cleaned
+
+
 def _build_contents(
     chat_history: List[Dict[str, str]],
     image_bytes: Optional[bytes] = None,
@@ -25,42 +81,39 @@ def _build_contents(
 ) -> List[types.Content]:
     contents: List[types.Content] = []
 
-    for msg in chat_history:
-        role = _normalize_role(msg.get("role", "user"))
-        text = (msg.get("text") or "").strip()
-
-        parts: List[types.Part] = []
-        if text:
-            parts.append(types.Part.from_text(text=text))
-
-        if parts:
-            contents.append(types.Content(role=role, parts=parts))
+    for msg in _trim_chat_history(chat_history):
+        contents.append(
+            types.Content(
+                role=msg["role"],
+                parts=[types.Part.from_text(text=msg["text"])],
+            )
+        )
 
     if image_bytes:
         image_part = types.Part.from_bytes(data=image_bytes, mime_type=image_mime)
 
-        # Attach image to the most recent user turn
+        # Attach image to most recent user turn
         for content in reversed(contents):
             if content.role == "user":
                 content.parts.append(image_part)
                 break
         else:
-            # No existing user message, so create one
-            contents.append(
-                types.Content(
-                    role="user",
-                    parts=[image_part],
-                )
+            contents.append(types.Content(role="user", parts=[image_part]))
+
+    if not contents:
+        contents = [
+            types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=DEFAULT_GREETING)],
             )
+        ]
 
     return contents
 
 
-def _iter_chunk_parts(chunk) -> Iterator[Any]:
+def _iter_chunk_parts(chunk: Any) -> Iterator[Any]:
     """
-    Safely extract parts from a streaming chunk.
-    Streaming responses are GenerateContentResponse objects, so parts are
-    usually nested under candidates -> content -> parts.
+    Safely extract multimodal parts from a streaming chunk.
     """
     candidates = getattr(chunk, "candidates", None) or []
     for candidate in candidates:
@@ -71,6 +124,22 @@ def _iter_chunk_parts(chunk) -> Iterator[Any]:
             yield part
 
 
+def _extract_inline_image_b64(part: Any) -> Optional[str]:
+    inline_data = getattr(part, "inline_data", None)
+    if not inline_data:
+        return None
+
+    data = getattr(inline_data, "data", None)
+    if not data:
+        return None
+
+    try:
+        return base64.b64encode(data).decode("utf-8")
+    except Exception as exc:
+        logger.warning("Failed to encode inline image chunk: %s", exc)
+        return None
+
+
 def generate_socratic_stream(
     superpowers: Dict[str, Any],
     chat_history: List[Dict[str, str]],
@@ -78,78 +147,44 @@ def generate_socratic_stream(
     image_mime: str = "image/jpeg",
 ):
     """
-    Stream interleaved text and optional generated images from the coaching agent.
-    Optionally attaches a user-provided image to the latest user turn.
+    Streams interleaved text and optional generated images from the coaching agent.
+
     Yields:
         {"type": "text", "data": "..."}
         {"type": "image", "data": "<base64>"}
     """
-    primary = superpowers.get("primary", "The Explorer")
-    secondary = superpowers.get("secondary", "Curiosity-Driven")
-    description = superpowers.get("description", "")
-
-    system_instruction = f"""
-You are ArcMotivate, a warm and deeply engaging mentor for young people (ages 8–18).
-Your goal is to help them explore who they are and what excites them — not to push them toward specific careers.
-
-Who they are right now:
-- Identity: {primary} ({secondary})
-- What drives them: {description}
-
-CRITICAL RULES:
-1) EXPLORE, DON'T PRESCRIBE: Ask questions that help them discover interests, NOT land on a career. Keep it open and curious. Do NOT say "so you'd be a great X".
-2) REFERENCE THEM: If they shared an image or mentioned something specific, reference it. Make them feel heard.
-3) REALISM: When you do mention real fields or industries, be specific and grounded. No made-up job titles.
-4) PACING: ONE engaging question at a time. Let the conversation breathe.
-5) VISUALS: When it would enrich the response, generate a small illustrative image — a concept, a scene, a visual analogy. Keep it tight and relevant.
-6) Keep text punchy (max 2 short paragraphs + your question).
-""".strip()
-
+    system_instruction = _build_system_instruction(superpowers)
     contents = _build_contents(
         chat_history=chat_history,
         image_bytes=image_bytes,
         image_mime=image_mime,
     )
 
-    if not contents:
-        contents = [
-            types.Content(
-                role="user",
-                parts=[types.Part.from_text(text="Hi")],
-            )
-        ]
-
     config = types.GenerateContentConfig(
         system_instruction=system_instruction,
-        temperature=1.0,
-        # Only include this if you truly want image generation in responses.
-        # If your model / endpoint doesn't support image output, remove it.
-        # response_modalities=["TEXT", "IMAGE"],
+        temperature=0.9,
     )
 
     try:
         with get_client() as client:
             stream = client.models.generate_content_stream(
-                model="gemini-3.1-flash-lite-preview",
+                model=DEFAULT_MODEL,
                 contents=contents,
                 config=config,
             )
 
             for chunk in stream:
-                # Easiest and safest path for normal streamed text
                 chunk_text = getattr(chunk, "text", None)
                 if chunk_text:
                     yield {"type": "text", "data": chunk_text}
 
-                # Handle multimodal parts if they exist in the chunk
                 for part in _iter_chunk_parts(chunk):
-                    inline_data = getattr(part, "inline_data", None)
-                    if inline_data and getattr(inline_data, "data", None):
-                        b64_data = base64.b64encode(inline_data.data).decode("utf-8")
-                        yield {"type": "image", "data": b64_data}
+                    image_b64 = _extract_inline_image_b64(part)
+                    if image_b64:
+                        yield {"type": "image", "data": image_b64}
 
-    except Exception as e:
-        print(f"Agent Error: {type(e).__name__}: {e}")
+    except Exception as exc:
+        logger.exception("Agent stream failed")
         yield {
             "type": "text",
             "data": "Simulation paused. What was your last move?",
