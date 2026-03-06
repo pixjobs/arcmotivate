@@ -15,7 +15,8 @@ def mock_genai_client():
             "title": "Python Developer",
             "content": "You learned Python.",
             "metadata": ["Code: Python"],
-            "image_prompt": "A python programming"
+            "image_prompt": "A python programming",
+            "links": [{"label": "Python.org", "url": "https://www.python.org"}]
         }
         mock_response.text = json.dumps(mock_tile)
         mock_client.models.generate_content.return_value = mock_response

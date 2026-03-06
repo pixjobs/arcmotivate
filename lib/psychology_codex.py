@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import List, Dict, Any
+from typing import Dict, Any, Optional
 from google import genai
 from google.genai import types
 
@@ -9,40 +9,60 @@ logger = logging.getLogger(__name__)
 def get_client():
     return genai.Client()
 
-def map_interests_to_superpowers(interests: List[str]) -> Dict[str, Any]:
+def map_narrative_to_superpowers(narrative: str, image_bytes: Optional[bytes] = None, image_mime: str = "image/jpeg") -> Dict[str, Any]:
     """
     ArcMotivate Psychology Codex (youth-friendly).
-    Maps interests -> a grounded "Primary role title" + "Secondary style" + 1-sentence explanation.
-    Uses career-construction + motivation concepts as inspiration (not diagnosis).
+    Maps a free-text personal narrative (likes, dislikes, school experience)
+    + optional image (artwork, project photo, etc.) -> a broad curiosity-style identity.
+    
+    IMPORTANT: Output is a curiosity/personality archetype, NOT a career label.
     """
     client = get_client()
 
-    clean = [i.strip() for i in interests if i and i.strip()]
-    if not clean:
+    if not narrative or not narrative.strip():
         return {
-            "primary": "Explorer",
-            "secondary": "Curiosity Engine",
-            "description": "You learn best by trying things, noticing what feels fun, and leveling up a little each time."
+            "primary": "The Explorer",
+            "secondary": "Curiosity-Driven",
+            "description": "You learn best by trying things, noticing what feels exciting, and following the threads that spark your curiosity."
         }
 
     prompt = f"""
-You are the ArcMotivate “Psychology Codex” for young people aged 8–18.
-Your job is to spot patterns and motivations from interests — NOT to diagnose or label.
+You are the ArcMotivate "Psychology Codex" for young people aged 8–18.
+Your job is to identify broad curiosity patterns and personal motivations from what someone shares about themselves.
+
+This is NOT about predicting careers or giving professional labels.
+This is about understanding HOW someone engages with the world and WHAT drives them.
+
 Use ideas inspired by:
-- Career Construction (life themes + preferred ways of solving problems)
-- Self-Determination Theory (autonomy, competence, relatedness)
+- Learning styles and curiosity types (exploration, making, storytelling, helping, investigating, leading, performing)
+- Self-Determination Theory (what gives them energy: autonomy, competence, or connection)
 
-User interests/hobbies: {", ".join(clean)}
+The person shared this about themselves:
+\"\"\"{narrative}\"\"\"
 
-Output ONLY valid JSON matching the schema with:
-- primary: a grounded, modern role title (NOT fantasy/magic). Think: "Creative Builder", "Neon Problem-Solver", "Systems Thinker", "Story Designer", "Community Helper", "Tech Tinkerer".
-- secondary: a short style tag (e.g., "Team Player", "Solo Focus", "Hands-On", "Big-Picture", "Detail Detective").
-- description: EXACTLY ONE sentence, encouraging and simple, that links their interests to what motivates them (autonomy/competence/relatedness) and what themes they care about (helping, building, exploring, creating, leading, investigating).
+{"The person also shared an image — let it inform your read of their style and interests." if image_bytes else ""}
+
+Output ONLY valid JSON with these exact fields:
+
+- primary: A broad curiosity identity using "The ___" format.
+  Examples: "The Maker", "The Storyteller", "The Explorer", "The Connector", "The Investigator", "The Performer", "The Builder", "The Helper", "The Tinkerer", "The Visionary".
+  RULES: 
+  - MUST start with "The".
+  - Do NOT use job titles, career roles, or professional labels (no "Strategist", "Engineer", "Designer", "Analyst", "Manager", "Developer").
+  - Keep it broad, timeless, and identity-level — not a job.
+
+- secondary: A short engagement style tag (e.g., "Hands-On", "Big-Picture", "Team Player", "Solo Focus", "Detail-Oriented", "Fast Mover", "Deep Diver").
+  RULES: No career language. Pure style.
+
+- description: EXACTLY ONE sentence linking what they shared to what energizes them.
+  Start with "You" and keep it personal, warm, and encouraging.
+  Do NOT mention careers, jobs, or professions. Focus on HOW they engage with the world.
 
 Constraints:
-- No fantasy classes, no magic words, no "RPG" phrasing.
-- Keep it suitable for ages 8–18.
-- Avoid sensitive claims (no mental health or clinical language).
+- No career or job language anywhere.
+- Suitable for ages 8–18.
+- No clinical, psychological, or diagnostic language.
+- Show you were listening — reference something specific they mentioned.
 """
 
     schema = {
@@ -56,9 +76,13 @@ Constraints:
     }
 
     try:
+        parts = [types.Part.from_text(text=prompt)]
+        if image_bytes:
+            parts.append(types.Part.from_bytes(data=image_bytes, mime_type=image_mime))
+
         response = client.models.generate_content(
             model="gemini-3.1-flash-lite-preview",
-            contents=prompt,
+            contents=[types.Content(role="user", parts=parts)],
             config=types.GenerateContentConfig(
                 temperature=0.5,
                 response_mime_type="application/json",
@@ -82,7 +106,7 @@ Constraints:
     except Exception as e:
         logger.error(f"Codex error: {e}")
         return {
-            "primary": "Explorer",
-            "secondary": "Problem Solver",
-            "description": "You’re learning what you like by exploring, practicing skills, and noticing what feels meaningful."
+            "primary": "The Explorer",
+            "secondary": "Curiosity-Driven",
+            "description": "You're someone who learns by doing, notices what feels real, and follows what genuinely sparks your interest."
         }
