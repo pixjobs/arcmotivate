@@ -23,12 +23,11 @@ def synthesize_single_tile(
     )
 
     prompt = f"""
-You are ArcMotivate's background analysis engine. Analyze the latest moments in this teenager's simulation to generate exactly ONE new "Canvas Tile" representing a concrete discovery, skill, or quest.
+You are ArcMotivate's background analysis engine. Analyze the latest moments in this person's simulation to generate exactly ONE new "Canvas Tile" representing a concrete discovery, skill, or quest.
 
 CRITICAL RULES:
 - Ensure absolute realism.
 - No patronizing tone.
-- Do NOT generate silly, sci-fi, or fake job titles like "Sonic Engineer".
 - Ground all insights in actual, contemporary industry practices.
 
 Assigned Role: {superpowers.get('primary')}

@@ -1,4 +1,5 @@
 import html
+import logging
 import os
 import pathlib
 import re
@@ -23,6 +24,9 @@ from lib.storybook_generator import (
     generate_pixel_art_illustration,
 )
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # ============================================================
 # APP CONFIG
 # ============================================================
@@ -43,8 +47,12 @@ MAX_CHAT_CONTEXT_MESSAGES = 12
 MAX_TILE_HISTORY_MESSAGES = 6
 MAX_INLINE_IMAGES_PER_TURN = 2
 
-POLL_INTERVAL_SEC = 1.1
+POLL_INTERVAL_SEC = 1.2
 MAX_PENDING_CANVAS_JOBS = 6
+
+SESSION_TTL_SEC = 60 * 60
+ARTIFACT_DIR = pathlib.Path("tmp")
+ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================
 # CSS
@@ -287,13 +295,6 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
   padding:8px 10px;border-radius:12px;background:rgba(34,211,238,.06);border:1px solid rgba(34,211,238,.1);
   color:var(--text-soft);font:.88rem/1.3 var(--font-ui)
 }
-.identity-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-.identity-download{
-  display:inline-flex;align-items:center;justify-content:center;padding:10px 12px;border-radius:12px;
-  background:linear-gradient(135deg,var(--violet),var(--cyan));color:#fff;text-decoration:none;
-  font:700 .82rem/1 var(--font-accent);letter-spacing:.04em;box-shadow:var(--shadow-1)
-}
-.identity-download:hover{box-shadow:var(--shadow-2),var(--glow-soft)}
 .identity-note{
   margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.03);
   border:1px solid rgba(255,255,255,.05);color:var(--text-soft);font:.92rem/1.5 var(--font-ui)
@@ -367,6 +368,7 @@ SESSION_STORES_LOCK = threading.Lock()
 
 
 def _default_session_store() -> Dict[str, Any]:
+    now = time.time()
     return {
         "superpowers": {},
         "tiles": [],
@@ -374,13 +376,14 @@ def _default_session_store() -> Dict[str, Any]:
         "canvas_jobs": [],
         "canvas_running": False,
         "last_canvas_error": None,
-        "last_canvas_completed_at": None,
         "avatar_b64": "",
         "song": {},
         "recap": "",
         "identity_jobs": [],
         "identity_running": False,
         "last_identity_error": None,
+        "midi_path": "",
+        "last_seen_at": now,
         "lock": threading.Lock(),
     }
 
@@ -391,11 +394,40 @@ def _session_id_from_request(request: Optional[gr.Request]) -> str:
     return "global"
 
 
+def _cleanup_stale_sessions() -> None:
+    now = time.time()
+    stale_ids: List[str] = []
+
+    with SESSION_STORES_LOCK:
+        for session_id, store in SESSION_STORES.items():
+            if session_id == "global":
+                continue
+            last_seen_at = float(store.get("last_seen_at", now))
+            if (now - last_seen_at) > SESSION_TTL_SEC:
+                stale_ids.append(session_id)
+
+        for session_id in stale_ids:
+            store = SESSION_STORES.pop(session_id, None)
+            if not store:
+                continue
+            midi_path = store.get("midi_path", "")
+            if midi_path:
+                try:
+                    path = pathlib.Path(midi_path)
+                    if path.exists():
+                        path.unlink()
+                except OSError:
+                    logger.warning("Failed to delete stale MIDI file for session %s", session_id)
+
+
 def get_session_store(request: Optional[gr.Request]) -> Dict[str, Any]:
+    _cleanup_stale_sessions()
     session_id = _session_id_from_request(request)
+
     with SESSION_STORES_LOCK:
         if session_id not in SESSION_STORES:
             SESSION_STORES[session_id] = _default_session_store()
+        SESSION_STORES[session_id]["last_seen_at"] = time.time()
         return SESSION_STORES[session_id]
 
 
@@ -437,7 +469,10 @@ def clean_message_for_backend(content: Any) -> str:
     return text.strip()
 
 
-def build_backend_history(history: List[Dict[str, Any]], max_messages: int = MAX_CHAT_CONTEXT_MESSAGES) -> List[Dict[str, str]]:
+def build_backend_history(
+    history: List[Dict[str, Any]],
+    max_messages: int = MAX_CHAT_CONTEXT_MESSAGES,
+) -> List[Dict[str, str]]:
     backend_history: List[Dict[str, str]] = []
     for msg in history[-max_messages:]:
         clean_content = clean_message_for_backend(msg.get("content", ""))
@@ -483,11 +518,6 @@ def extract_tool_json_and_display_text(accumulated_text: str) -> Tuple[str, Opti
     return display_text, recovered_prompt, False
 
 
-def sanitize_url(url: str) -> str:
-    url = (url or "").strip()
-    return url if url.startswith(("http://", "https://")) else ""
-
-
 def safe_text(value: Any) -> str:
     return html.escape(str(value or ""))
 
@@ -505,8 +535,8 @@ def maybe_generate_inline_visual(prompt: Optional[str]) -> Optional[str]:
         return None
     try:
         return cached_pixel_art(prompt)
-    except Exception as exc:
-        print(f"Inline image error: {exc}")
+    except Exception:
+        logger.exception("Inline image generation failed")
         return None
 
 
@@ -545,8 +575,8 @@ def format_canvas(tiles: List[Dict[str, Any]]) -> str:
         for link in tile.get("links") or []:
             if isinstance(link, dict):
                 label = safe_text(link.get("label", "Explore"))
-                url = sanitize_url(link.get("url", ""))
-                if url:
+                url = str(link.get("url", "")).strip()
+                if url.startswith(("http://", "https://")):
                     links_html.append(
                         f"<a href='{html.escape(url, quote=True)}' target='_blank' "
                         f"rel='noopener noreferrer' class='tile-link'>🔗 {label}</a>"
@@ -637,13 +667,6 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
     subtitle = safe_text(song.get("subtitle", "Talk with Arc to generate your anthem"))
     bpm = safe_text(song.get("bpm", "—"))
     mood = safe_text(song.get("spec", {}).get("mood", "Still forming"))
-    midi_path = song.get("midi_path", "")
-
-    download_html = ""
-    if midi_path and os.path.exists(midi_path):
-        download_html = (
-            f"<a class='identity-download' href='/gradio_api/file={html.escape(midi_path, quote=True)}' download>🎵 Download MIDI</a>"
-        )
 
     busy_html = "<div class='synth-spinner'>🎛️ Forging your avatar and anthem...</div>" if (identity_running or identity_jobs) else ""
     error_html = "<div class='identity-note'>⚠️ Identity build hit a snag. Keep chatting and try again in a moment.</div>" if last_identity_error else ""
@@ -673,9 +696,8 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
           <div class='identity-pill'><strong>Title</strong><br>{title}</div>
           <div class='identity-pill'><strong>BPM</strong><br>{bpm}</div>
           <div class='identity-pill'><strong>Mood</strong><br>{mood}</div>
-          <div class='identity-pill'><strong>Status</strong><br>{"Ready" if midi_path else "Not built yet"}</div>
+          <div class='identity-pill'><strong>Status</strong><br>{"Ready soon" if (identity_running or identity_jobs) else "Waiting"}</div>
         </div>
-        <div class='identity-actions'>{download_html}</div>
         {recap_html}
         {busy_html}
         {error_html}
@@ -703,10 +725,10 @@ def canvas_worker(session_id: str) -> None:
 
         try:
             new_tile_data = synthesize_single_tile(job["history"], job["superpowers"])
-        except Exception as exc:
-            print(f"Tile synthesis error: {exc}")
+        except Exception:
+            logger.exception("Tile synthesis error")
             with store["lock"]:
-                store["last_canvas_error"] = str(exc)
+                store["last_canvas_error"] = "tile"
             continue
 
         if not new_tile_data:
@@ -716,15 +738,15 @@ def canvas_worker(session_id: str) -> None:
         if image_prompt:
             try:
                 new_tile_data["image_b64"] = cached_pixel_art(image_prompt)
-            except Exception as exc:
-                print(f"Tile art error: {exc}")
+            except Exception:
+                logger.exception("Tile art error")
                 new_tile_data["image_b64"] = None
 
         with store["lock"]:
             store["tiles"].append(new_tile_data)
             store["turn_count"] += 1
             store["last_canvas_error"] = None
-            store["last_canvas_completed_at"] = time.time()
+            store["last_seen_at"] = time.time()
 
 
 def identity_worker(session_id: str) -> None:
@@ -748,10 +770,10 @@ def identity_worker(session_id: str) -> None:
             avatar_b64 = generate_custom_avatar(profile, latest_signal=latest_signal)
             song = generate_custom_song(profile, recent_chat=history)
             recap = generate_hero_recap(profile)
-        except Exception as exc:
-            print(f"Identity build error: {exc}")
+        except Exception:
+            logger.exception("Identity build error")
             with store["lock"]:
-                store["last_identity_error"] = str(exc)
+                store["last_identity_error"] = "identity"
             continue
 
         with store["lock"]:
@@ -759,9 +781,12 @@ def identity_worker(session_id: str) -> None:
                 store["avatar_b64"] = avatar_b64
             if song:
                 store["song"] = song
+                midi_path = str(song.get("midi_path", "")).strip()
+                store["midi_path"] = midi_path
             if recap:
                 store["recap"] = recap
             store["last_identity_error"] = None
+            store["last_seen_at"] = time.time()
 
 
 def start_canvas_worker_if_needed(request: Optional[gr.Request]) -> None:
@@ -794,7 +819,7 @@ def start_identity_worker_if_needed(request: Optional[gr.Request]) -> None:
     threading.Thread(target=identity_worker, args=(session_id,), daemon=True).start()
 
 
-def enqueue_canvas_job(history: List[Dict[str, Any]], state_data: Dict[str, Any], request: gr.Request):
+def enqueue_canvas_job(history: List[Dict[str, Any]], request: gr.Request):
     store = get_session_store(request)
     snapshot = build_backend_history(history, max_messages=MAX_TILE_HISTORY_MESSAGES)
 
@@ -813,7 +838,7 @@ def enqueue_canvas_job(history: List[Dict[str, Any]], state_data: Dict[str, Any]
     return render_canvas_with_status(store), get_header_status_html(store)
 
 
-def enqueue_identity_job(history: List[Dict[str, Any]], state_data: Dict[str, Any], request: gr.Request):
+def enqueue_identity_job(history: List[Dict[str, Any]], request: gr.Request):
     store = get_session_store(request)
     snapshot = build_backend_history(history, max_messages=MAX_CHAT_CONTEXT_MESSAGES)
     latest_signal = clean_message_for_backend(history[-1].get("content", "")) if history else ""
@@ -834,10 +859,17 @@ def enqueue_identity_job(history: List[Dict[str, Any]], state_data: Dict[str, An
 
 def refresh_async_panels(request: gr.Request):
     store = get_session_store(request)
+    with store["lock"]:
+        midi_path = str(store.get("midi_path", "")).strip()
+        midi_exists = bool(midi_path and pathlib.Path(midi_path).exists())
+
+    midi_update = gr.update(value=midi_path if midi_exists else None, visible=midi_exists)
+
     return (
         render_canvas_with_status(store),
         get_header_status_html(store),
         render_identity_lab(store),
+        midi_update,
     )
 
 
@@ -875,8 +907,8 @@ def user_submit(user_message: Any, history: Optional[List[Dict[str, Any]]], stat
                 state_data["pending_image"] = {"bytes": img_bytes, "mime": mime}
             else:
                 state_data.pop("pending_image", None)
-        except Exception as exc:
-            print(f"Image read error: {exc}")
+        except Exception:
+            logger.exception("Image read error")
             state_data.pop("pending_image", None)
     else:
         state_data.pop("pending_image", None)
@@ -911,12 +943,13 @@ def process_simulation(
         img_mime = pending.get("mime", "image/jpeg")
         try:
             mapped = map_narrative_to_superpowers(latest_user_input, img_bytes, img_mime)
-        except Exception as exc:
-            print(f"Superpower mapping error: {exc}")
+        except Exception:
+            logger.exception("Superpower mapping error")
             mapped = {}
 
         with store["lock"]:
             store["superpowers"] = mapped
+            store["last_seen_at"] = time.time()
 
     history.append({"role": "assistant", "content": ""})
     backend_history = build_backend_history(history[:-1], max_messages=MAX_CHAT_CONTEXT_MESSAGES)
@@ -934,8 +967,8 @@ def process_simulation(
         with store["lock"]:
             superpowers = deepcopy(store["superpowers"])
         stream = generate_socratic_stream(superpowers, backend_history, img_bytes, img_mime)
-    except Exception as exc:
-        print(f"Stream setup error: {exc}")
+    except Exception:
+        logger.exception("Stream setup error")
         history[-1]["content"] = "⚠️ Something glitched while starting the simulation."
         yield history, render_canvas_with_status(store)
         return
@@ -1034,20 +1067,24 @@ with gr.Blocks(css=css, theme=gr.themes.Base(), title=APP_TITLE) as demo:
 
             with gr.Column(elem_classes=["chat-input-shell"]):
                 msg_input = gr.MultimodalTextbox(
-                    placeholder="Type your message, attach an image, then press Enter…",
+                    placeholder="Type your message or add one image, then press Enter…",
                     show_label=False,
                     container=False,
                     file_types=["image"],
-                    file_count="multiple",
+                    file_count="single",
                     autofocus=True,
                 )
-                gr.HTML("<div class='chat-input-hint'>Press <strong>Enter</strong> to send · <strong>Shift+Enter</strong> for a new line · add an image inline</div>")
+                gr.HTML(
+                    "<div class='chat-input-hint'>Press <strong>Enter</strong> to send · "
+                    "<strong>Shift+Enter</strong> for a new line · you can add one image too</div>"
+                )
 
             gr.Examples(
                 examples=[
-                    [{"text": "I love making things that help other people, but I get bored when tasks feel repetitive.", "files": []}],
-                    [{"text": "I’ve attached something I made — what does it suggest about me?", "files": []}],
-                    [{"text": "At school I liked solving messy problems more than following instructions.", "files": []}],
+                    [{"text": "I really like drawing characters and making up stories.", "files": []}],
+                    [{"text": "I’m proud of a project I made at school, even though it was hard.", "files": []}],
+                    [{"text": "I like helping people, but I also like building things on my own.", "files": []}],
+                    [{"text": "I attached something I made. What does it say about me?", "files": []}],
                 ],
                 inputs=msg_input,
                 label="Quick starts",
@@ -1062,6 +1099,11 @@ with gr.Blocks(css=css, theme=gr.themes.Base(), title=APP_TITLE) as demo:
 
                 with gr.TabItem("🧬 Identity Lab"):
                     identity_output = gr.HTML(render_identity_lab(_default_session_store()))
+                    midi_download = gr.File(
+                        label="Download your song",
+                        interactive=False,
+                        visible=False,
+                    )
 
     poll_timer = gr.Timer(POLL_INTERVAL_SEC)
 
@@ -1083,14 +1125,14 @@ with gr.Blocks(css=css, theme=gr.themes.Base(), title=APP_TITLE) as demo:
 
     queued_canvas = sim_event.then(
         enqueue_canvas_job,
-        [chatbot, state],
+        [chatbot],
         [canvas_output, header_status],
         queue=False,
     )
 
     queued_identity = queued_canvas.then(
         enqueue_identity_job,
-        [chatbot, state],
+        [chatbot],
         [identity_output, header_status],
         queue=False,
     )
@@ -1099,7 +1141,7 @@ with gr.Blocks(css=css, theme=gr.themes.Base(), title=APP_TITLE) as demo:
 
     poll_timer.tick(
         refresh_async_panels,
-        outputs=[canvas_output, header_status, identity_output],
+        outputs=[canvas_output, header_status, identity_output, midi_download],
         queue=False,
     )
 

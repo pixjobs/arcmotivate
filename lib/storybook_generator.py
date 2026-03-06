@@ -1,6 +1,10 @@
 import base64
 import json
 import logging
+import math
+import random
+import struct
+import wave
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List, Optional
@@ -12,6 +16,8 @@ logger = logging.getLogger(__name__)
 TEXT_MODEL = "gemini-3.1-flash-lite-preview"
 STRUCTURED_MODEL = "gemini-3-flash-preview"
 IMAGE_MODEL = "gemini-3.1-flash-image-preview"
+
+SAMPLE_RATE = 22050
 
 
 def get_client():
@@ -45,20 +51,51 @@ def _collect_interests(user_profile: Dict[str, Any], limit: int = 6) -> List[str
 
 def _profile_summary(user_profile: Dict[str, Any]) -> Dict[str, str]:
     superpowers = user_profile.get("superpowers", {}) or user_profile
-    primary = (
-        superpowers.get("primary")
-        or superpowers.get("archetype")
-        or "Explorer"
-    )
+    primary = superpowers.get("primary") or superpowers.get("archetype") or "Explorer"
     secondary = superpowers.get("secondary") or ""
+    superpower = superpowers.get("superpower") or ""
     description = superpowers.get("description") or ""
+    growth_nudge = superpowers.get("growth_nudge") or ""
     interests = ", ".join(_collect_interests(user_profile))
     return {
         "primary": str(primary),
         "secondary": str(secondary),
+        "superpower": str(superpower),
         "description": str(description),
+        "growth_nudge": str(growth_nudge),
         "interests": interests,
     }
+
+
+def _clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+def _note_to_midi(note_name: str) -> int:
+    mapping = {
+        "C": 60, "C#": 61, "DB": 61, "D": 62, "D#": 63, "EB": 63, "E": 64,
+        "F": 65, "F#": 66, "GB": 66, "G": 67, "G#": 68, "AB": 68,
+        "A": 69, "A#": 70, "BB": 70, "B": 71,
+    }
+    return mapping.get(note_name.upper(), 60)
+
+
+def _midi_to_freq(midi_note: int) -> float:
+    return 440.0 * (2.0 ** ((midi_note - 69) / 12.0))
+
+
+def _build_scale(tonic: str, scale: str) -> List[int]:
+    root = _note_to_midi(tonic)
+    intervals = [0, 2, 4, 5, 7, 9, 11] if scale != "minor" else [0, 2, 3, 5, 7, 8, 10]
+    return [root + i for i in intervals]
+
+
+def _degree_to_midi(scale_notes: List[int], degree: int, octave_shift: int = 0) -> int:
+    if degree <= 0:
+        degree = 1
+    idx = (degree - 1) % len(scale_notes)
+    octave = (degree - 1) // len(scale_notes)
+    return scale_notes[idx] + (12 * octave) + (12 * octave_shift)
 
 
 # ============================================================
@@ -66,51 +103,53 @@ def _profile_summary(user_profile: Dict[str, Any]) -> Dict[str, str]:
 # ============================================================
 
 def generate_hero_recap(user_profile: Dict[str, Any]) -> str:
-    """
-    Generates a short 2–3 sentence recap for the user.
-    """
     client = get_client()
     profile = _profile_summary(user_profile)
 
     prompt = f"""
 You are ArcMotivate.
 
-Write a 2–3 sentence “ending screen” message for a young person aged 8–18.
-Tone: uplifting, modern, confident, grounded.
-Do not use fantasy language, RPG classes, magic, destiny, or fake job titles.
+Write a 2–3 sentence ending-screen message for a young person aged 8–18.
+Tone: uplifting, modern, calm, grounded.
+Do not use fantasy language, destiny language, or fake job titles.
 
 Profile:
 - Archetype: {profile['primary']}
 - Secondary signal: {profile['secondary']}
+- Superpower: {profile['superpower']}
 - Description: {profile['description']}
 - Interests: {profile['interests']}
+- Growth nudge: {profile['growth_nudge']}
 
 Requirements:
 - 2–3 sentences total
 - Simple language
-- Make it about exploration and growth, not choosing one forever-career
-- End with a forward-looking line like:
-  "Next level: try one small experiment this week."
+- Make it about exploration and growth, not choosing one forever path
+- End with a small forward-looking line
 """.strip()
 
     try:
         response = client.models.generate_content(
             model=TEXT_MODEL,
             contents=prompt,
-            config={"temperature": 0.9},
+            config={"temperature": 0.85},
         )
         text = (response.text or "").strip()
-        return text or "You’re building your future one small discovery at a time. Next level: try one small experiment this week."
+        return text or "You’re learning what fits you, one small signal at a time. Next level: try one small experiment this week."
     except Exception as exc:
         logger.error("Hero recap generation failed: %s", exc)
-        return "You’re building your future one small discovery at a time. Next level: try one small experiment this week."
+        return "You’re learning what fits you, one small signal at a time. Next level: try one small experiment this week."
 
-""" 
-Generates a neon pixel-art image.
-Returns base64-encoded image bytes as a UTF-8 string; empty string on failure.
-"""
+
+# ============================================================
+# PIXEL ART
+# ============================================================
+
 def generate_pixel_art_illustration(scene_description: str) -> str:
-
+    """
+    Generates a neon pixel-art image.
+    Returns base64-encoded image bytes as a UTF-8 string; empty string on failure.
+    """
     client = get_client()
 
     style = (
@@ -125,9 +164,7 @@ def generate_pixel_art_illustration(scene_description: str) -> str:
             contents=full_prompt,
             config={
                 "response_modalities": ["IMAGE"],
-                "image_config": {
-                    "aspect_ratio": "16:9",
-                },
+                "image_config": {"aspect_ratio": "16:9"},
             },
         )
 
@@ -141,6 +178,7 @@ def generate_pixel_art_illustration(scene_description: str) -> str:
 
     return ""
 
+
 # ============================================================
 # CUSTOM AVATAR
 # ============================================================
@@ -150,19 +188,16 @@ def generate_custom_avatar(
     latest_signal: str = "",
     aspect_ratio: str = "1:1",
 ) -> str:
-    """
-    Generates a custom avatar image and returns base64-encoded image bytes.
-    Empty string on failure.
-    """
     client = get_client()
     profile = _profile_summary(user_profile)
 
     prompt = f"""
-Create a custom avatar portrait for a young person's career-exploration profile.
+Create a custom avatar portrait for a young person's exploration profile.
 
 Character signals:
 - Core archetype: {profile['primary']}
 - Secondary signal: {profile['secondary']}
+- Superpower: {profile['superpower']}
 - Description: {profile['description']}
 - Interests: {profile['interests']}
 - Latest conversational signal: {latest_signal}
@@ -170,7 +205,7 @@ Character signals:
 Style requirements:
 - polished digital illustration
 - futuristic but grounded
-- expressive, optimistic, smart
+- expressive, optimistic, thoughtful
 - readable face / silhouette
 - subtle neon arcade influence
 - no text, no logos, no watermark
@@ -200,7 +235,7 @@ Style requirements:
 
 
 # ============================================================
-# SONG SPEC -> MIDI
+# SONG SPEC -> WAV
 # ============================================================
 
 def generate_custom_song(
@@ -209,37 +244,32 @@ def generate_custom_song(
     output_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Generates a custom song spec from the user's profile, then renders it to MIDI.
+    Generates a custom calming audio spec, then renders it to WAV.
 
     Returns:
         {
             "title": str,
             "subtitle": str,
             "bpm": int,
-            "midi_b64": str,
-            "midi_path": str,
+            "audio_b64": str,
+            "audio_path": str,
+            "mime_type": "audio/wav",
             "spec": dict
         }
     """
     spec = generate_song_spec(user_profile, recent_chat)
     if not spec:
-        return {
-            "title": "My Song",
-            "subtitle": "A custom anthem",
-            "bpm": 100,
-            "midi_b64": "",
-            "midi_path": "",
-            "spec": {},
-        }
+        spec = _fallback_song_spec(_profile_summary(user_profile))
 
-    midi_path, midi_b64 = render_song_spec_to_midi(spec, output_path=output_path)
+    audio_path, audio_b64 = render_song_spec_to_wav(spec, output_path=output_path)
 
     return {
-        "title": spec.get("title", "My Song"),
-        "subtitle": spec.get("subtitle", "A custom anthem"),
-        "bpm": int(spec.get("bpm", 100)),
-        "midi_b64": midi_b64,
-        "midi_path": midi_path,
+        "title": spec.get("title", "My Sound"),
+        "subtitle": spec.get("subtitle", "A calm custom theme"),
+        "bpm": int(spec.get("bpm", 68)),
+        "audio_b64": audio_b64,
+        "audio_path": audio_path,
+        "mime_type": "audio/wav",
         "spec": spec,
     }
 
@@ -249,7 +279,8 @@ def generate_song_spec(
     recent_chat: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
-    Uses Gemini structured output to create a compact song blueprint.
+    Uses Gemini structured output to create a compact, soothing audio blueprint.
+    Strongly biased toward calm / ambient / subtle / reflective textures.
     """
     client = get_client()
     profile = _profile_summary(user_profile)
@@ -264,21 +295,61 @@ def generate_song_spec(
     history_text = "\n".join(history_lines[-8:])
 
     prompt = f"""
-You are designing a short personal anthem for a young person.
+You are designing a short personal soundscape for a young person.
 
 Profile:
 - Archetype: {profile['primary']}
 - Secondary signal: {profile['secondary']}
+- Superpower: {profile['superpower']}
 - Description: {profile['description']}
 - Interests: {profile['interests']}
+- Growth nudge: {profile['growth_nudge']}
 
 Recent conversation:
 {history_text}
 
-Create a short, uplifting, loopable song blueprint.
-It should feel personal, modern, motivating, and emotionally clear.
-Keep it compact enough for a lightweight 20-45 second MIDI.
-Avoid anything gloomy or chaotic.
+Create a compact, soothing, subtle, loopable personal theme.
+
+The sound should feel:
+- calm
+- safe
+- reflective
+- quietly hopeful
+- immersive without demanding attention
+
+Allowed vibe references:
+- ambient
+- chillout
+- soft cinematic
+- dreamy
+- gentle ASMR-like textures
+- theta-wave-inspired calm focus
+- warm, minimal synth pads
+- soft glassy tones
+- slow pulse
+
+Not allowed:
+- punk
+- rock
+- techno
+- EDM drops
+- aggressive drums
+- distortion
+- glitch chaos
+- jump-scare transitions
+- noisy, harsh, or overly busy arrangements
+
+Musical constraints:
+- keep it lightweight and subtle
+- make it suitable for browser playback
+- target 18 to 28 seconds
+- use slow to medium-slow tempo
+- drums should usually be false
+- prefer soft pulse over obvious beat
+- keep the melody sparse
+- prioritize texture, breath, and emotional clarity over hooks
+
+Return only structured JSON.
 """.strip()
 
     schema = {
@@ -290,9 +361,11 @@ Avoid anything gloomy or chaotic.
             "tonic": {"type": "string"},
             "scale": {"type": "string"},
             "mood": {"type": "string"},
-            "lead_program": {"type": "integer"},
-            "bass_program": {"type": "integer"},
-            "pad_program": {"type": "integer"},
+            "texture": {"type": "string"},
+            "carrier_hz": {"type": "number"},
+            "beat_hz": {"type": "number"},
+            "shimmer": {"type": "number"},
+            "noise_amount": {"type": "number"},
             "drums": {"type": "boolean"},
             "sections": {
                 "type": "array",
@@ -322,9 +395,11 @@ Avoid anything gloomy or chaotic.
             "tonic",
             "scale",
             "mood",
-            "lead_program",
-            "bass_program",
-            "pad_program",
+            "texture",
+            "carrier_hz",
+            "beat_hz",
+            "shimmer",
+            "noise_amount",
             "drums",
             "sections",
         ],
@@ -335,7 +410,7 @@ Avoid anything gloomy or chaotic.
             model=STRUCTURED_MODEL,
             contents=prompt,
             config={
-                "temperature": 0.8,
+                "temperature": 0.65,
                 "response_mime_type": "application/json",
                 "response_json_schema": schema,
             },
@@ -347,86 +422,68 @@ Avoid anything gloomy or chaotic.
 
 
 def _fallback_song_spec(profile: Dict[str, str]) -> Dict[str, Any]:
-    title = f"{profile['primary']} Mode"
+    title = f"{profile['primary']} Drift"
     return {
         "title": title,
-        "subtitle": "A custom anthem",
-        "bpm": 104,
+        "subtitle": "A calm custom theme",
+        "bpm": 68,
         "tonic": "C",
         "scale": "major",
-        "mood": "hopeful, curious, forward-moving",
-        "lead_program": 81,   # lead/synth-ish
-        "bass_program": 38,   # synth bass-ish
-        "pad_program": 89,    # warm pad-ish
-        "drums": True,
+        "mood": "calm, reflective, quietly hopeful",
+        "texture": "soft ambient pad with subtle shimmer",
+        "carrier_hz": 140.0,
+        "beat_hz": 5.0,
+        "shimmer": 0.22,
+        "noise_amount": 0.018,
+        "drums": False,
         "sections": [
             {
-                "name": "intro",
-                "bars": 2,
-                "chords": ["C", "Am"],
-                "motif_degrees": [1, 3, 5, 6],
+                "name": "settle",
+                "bars": 4,
+                "chords": ["C", "Am", "F", "G"],
+                "motif_degrees": [1, 3, 5, 3],
                 "energy": 2,
             },
             {
-                "name": "lift",
+                "name": "float",
                 "bars": 4,
-                "chords": ["F", "G", "Em", "Am"],
-                "motif_degrees": [3, 5, 6, 5, 3, 2],
-                "energy": 4,
+                "chords": ["Am", "F", "C", "G"],
+                "motif_degrees": [3, 5, 6, 5],
+                "energy": 3,
             },
         ],
     }
 
 
 # ============================================================
-# MIDI RENDERER
+# FAST WAV RENDERER
 # ============================================================
 
-def render_song_spec_to_midi(
+def render_song_spec_to_wav(
     spec: Dict[str, Any],
     output_path: Optional[str] = None,
 ) -> tuple[str, str]:
     """
-    Renders the JSON song spec into a MIDI file using mido.
+    Fast pure-Python WAV renderer.
+    Produces browser-native audio with a subtle ambient / theta-inspired feel.
 
     Returns:
-        (midi_path, midi_b64)
+        (audio_path, audio_b64)
     """
-    try:
-        import mido
-        from mido import Message, MidiFile, MidiTrack, MetaMessage
-    except Exception as exc:
-        raise RuntimeError(
-            "MIDI rendering requires 'mido'. Install it with: pip install mido"
-        ) from exc
-
-    bpm = int(spec.get("bpm", 100))
+    bpm = int(spec.get("bpm", 68))
     tonic = _safe_str(spec.get("tonic"), "C").upper()
     scale = _safe_str(spec.get("scale"), "major").lower()
-    lead_program = int(spec.get("lead_program", 81))
-    bass_program = int(spec.get("bass_program", 38))
-    pad_program = int(spec.get("pad_program", 89))
-    drums_enabled = bool(spec.get("drums", True))
+    carrier_hz = float(spec.get("carrier_hz", 140.0))
+    beat_hz = float(spec.get("beat_hz", 5.0))
+    shimmer = float(spec.get("shimmer", 0.22))
+    noise_amount = float(spec.get("noise_amount", 0.018))
     sections = spec.get("sections") or []
 
-    mid = MidiFile(ticks_per_beat=480)
-
-    tempo_track = MidiTrack()
-    lead_track = MidiTrack()
-    bass_track = MidiTrack()
-    pad_track = MidiTrack()
-    drum_track = MidiTrack()
-
-    mid.tracks.extend([tempo_track, lead_track, bass_track, pad_track])
-    if drums_enabled:
-        mid.tracks.append(drum_track)
-
-    tempo_track.append(MetaMessage("set_tempo", tempo=mido.bpm2tempo(bpm), time=0))
-    tempo_track.append(MetaMessage("time_signature", numerator=4, denominator=4, time=0))
-
-    lead_track.append(Message("program_change", channel=0, program=max(0, min(127, lead_program)), time=0))
-    bass_track.append(Message("program_change", channel=1, program=max(0, min(127, bass_program)), time=0))
-    pad_track.append(Message("program_change", channel=2, program=max(0, min(127, pad_program)), time=0))
+    bpm = max(52, min(84, bpm))
+    carrier_hz = _clamp(carrier_hz, 90.0, 220.0)
+    beat_hz = _clamp(beat_hz, 3.0, 7.0)
+    shimmer = _clamp(shimmer, 0.0, 0.45)
+    noise_amount = _clamp(noise_amount, 0.0, 0.05)
 
     scale_notes = _build_scale(tonic, scale)
     chord_roots = {
@@ -435,112 +492,150 @@ def render_song_spec_to_midi(
         "A": 69, "A#": 70, "BB": 70, "B": 71,
     }
 
+    beat_seconds = 60.0 / bpm
+    bar_seconds = 4.0 * beat_seconds
+
+    arrangement: List[Dict[str, Any]] = []
+    total_duration = 0.0
+
     for section in sections:
         bars = max(1, int(section.get("bars", 2)))
         chords = section.get("chords") or [tonic]
         motif = section.get("motif_degrees") or [1, 3, 5, 3]
-        energy = max(1, min(5, int(section.get("energy", 3))))
+        energy = max(1, min(5, int(section.get("energy", 2))))
 
         for bar in range(bars):
             chord_name = _safe_str(chords[bar % len(chords)], tonic).upper()
             root = chord_roots.get(chord_name, 60)
+            arrangement.append(
+                {
+                    "root": root,
+                    "motif": motif,
+                    "energy": energy,
+                    "start": total_duration,
+                    "duration": bar_seconds,
+                }
+            )
+            total_duration += bar_seconds
 
-            _append_pad_bar(pad_track, root, energy, ticks_per_beat=480)
-            _append_bass_bar(bass_track, root, energy, ticks_per_beat=480)
-            _append_lead_bar(lead_track, scale_notes, motif, energy, ticks_per_beat=480)
-
-            if drums_enabled:
-                _append_drum_bar(drum_track, energy, ticks_per_beat=480)
+    total_duration = _clamp(total_duration, 18.0, 28.0)
+    total_frames = int(total_duration * SAMPLE_RATE)
 
     if output_path:
-        midi_path = output_path
+        audio_path = output_path
     else:
-        tmp = NamedTemporaryFile(delete=False, suffix=".mid")
-        midi_path = tmp.name
+        tmp = NamedTemporaryFile(delete=False, suffix=".wav")
+        audio_path = tmp.name
         tmp.close()
 
-    mid.save(midi_path)
-    midi_b64 = base64.b64encode(Path(midi_path).read_bytes()).decode("utf-8")
-    return midi_path, midi_b64
+    rng = random.Random(1337)
+
+    with wave.open(audio_path, "wb") as wav_file:
+        wav_file.setnchannels(2)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(SAMPLE_RATE)
+
+        frames = bytearray()
+
+        for i in range(total_frames):
+            t = i / SAMPLE_RATE
+
+            section = arrangement[min(len(arrangement) - 1, int(t / bar_seconds))] if arrangement else {
+                "root": 60,
+                "motif": [1, 3, 5, 3],
+                "energy": 2,
+                "start": 0.0,
+                "duration": bar_seconds,
+            }
+
+            root = int(section["root"])
+            motif = section["motif"]
+            energy = int(section["energy"])
+            local_t = t - float(section["start"])
+            local_phase = local_t / max(0.001, float(section["duration"]))
+
+            # Soft chord bed
+            third = root + (3 if scale == "minor" else 4)
+            fifth = root + 7
+
+            root_f = _midi_to_freq(root - 12)
+            third_f = _midi_to_freq(third - 12)
+            fifth_f = _midi_to_freq(fifth - 12)
+
+            chord_env = _slow_env(local_phase)
+
+            pad = (
+                0.19 * math.sin(2 * math.pi * root_f * t) +
+                0.14 * math.sin(2 * math.pi * third_f * t) +
+                0.12 * math.sin(2 * math.pi * fifth_f * t)
+            ) * chord_env
+
+            # Sparse glassy motif
+            motif_step = min(len(motif) - 1, int(local_phase * max(1, len(motif))))
+            degree = int(motif[motif_step]) if motif else 1
+            lead_note = _degree_to_midi(scale_notes, degree, octave_shift=1)
+            lead_f = _midi_to_freq(lead_note)
+            lead_env = _plucked_env((local_phase * len(motif)) % 1.0)
+            lead = (
+                0.06 * math.sin(2 * math.pi * lead_f * t) +
+                0.025 * math.sin(2 * math.pi * lead_f * 2.0 * t)
+            ) * lead_env * (0.6 + 0.08 * energy)
+
+            # Theta-like carrier and subtle binaural separation
+            left_carrier = 0.08 * math.sin(2 * math.pi * (carrier_hz - beat_hz / 2.0) * t)
+            right_carrier = 0.08 * math.sin(2 * math.pi * (carrier_hz + beat_hz / 2.0) * t)
+
+            # Soft shimmer
+            shimmer_freq = root_f * 2.0
+            shimmer_sig = shimmer * 0.035 * math.sin(2 * math.pi * shimmer_freq * t)
+
+            # Breath / ASMR-like noise
+            noise = (rng.uniform(-1.0, 1.0) * noise_amount) * _breath_env(local_phase)
+
+            left = pad + lead + left_carrier + shimmer_sig + noise
+            right = pad + lead + right_carrier + shimmer_sig + noise
+
+            # Gentle master fade in/out
+            master = _master_env(t, total_duration)
+            left *= master
+            right *= master
+
+            left = _soft_clip(left * 0.9)
+            right = _soft_clip(right * 0.9)
+
+            left_i = int(_clamp(left, -1.0, 1.0) * 32767)
+            right_i = int(_clamp(right, -1.0, 1.0) * 32767)
+
+            frames.extend(struct.pack("<hh", left_i, right_i))
+
+        wav_file.writeframes(frames)
+
+    audio_b64 = base64.b64encode(Path(audio_path).read_bytes()).decode("utf-8")
+    return audio_path, audio_b64
 
 
-def _build_scale(tonic: str, scale: str) -> List[int]:
-    tonic_map = {
-        "C": 60, "C#": 61, "DB": 61, "D": 62, "D#": 63, "EB": 63, "E": 64,
-        "F": 65, "F#": 66, "GB": 66, "G": 67, "G#": 68, "AB": 68,
-        "A": 69, "A#": 70, "BB": 70, "B": 71,
-    }
-    root = tonic_map.get(tonic.upper(), 60)
-    intervals = [0, 2, 4, 5, 7, 9, 11] if scale != "minor" else [0, 2, 3, 5, 7, 8, 10]
-    return [root + i for i in intervals]
+def _slow_env(phase: float) -> float:
+    phase = _clamp(phase, 0.0, 1.0)
+    return 0.55 + 0.45 * math.sin(math.pi * phase)
 
 
-def _degree_to_midi(scale_notes: List[int], degree: int, octave_shift: int = 0) -> int:
-    if degree <= 0:
-        degree = 1
-    idx = (degree - 1) % len(scale_notes)
-    octave = (degree - 1) // len(scale_notes)
-    return scale_notes[idx] + (12 * octave) + (12 * octave_shift)
+def _plucked_env(phase: float) -> float:
+    phase = _clamp(phase, 0.0, 1.0)
+    attack = min(1.0, phase / 0.08)
+    decay = math.exp(-3.8 * phase)
+    return attack * decay
 
 
-def _append_note(track, note: int, velocity: int, duration_beats: float, ticks_per_beat: int = 480):
-    duration_ticks = int(duration_beats * ticks_per_beat)
-    track.append(__import__("mido").Message("note_on", note=note, velocity=velocity, time=0))
-    track.append(__import__("mido").Message("note_off", note=note, velocity=0, time=duration_ticks))
+def _breath_env(phase: float) -> float:
+    phase = _clamp(phase, 0.0, 1.0)
+    return 0.35 + 0.65 * (0.5 + 0.5 * math.sin(2 * math.pi * phase))
 
 
-def _append_lead_bar(track, scale_notes: List[int], motif: List[int], energy: int, ticks_per_beat: int = 480):
-    velocity = 70 + energy * 8
-    motif = motif[:8] if motif else [1, 3, 5, 3]
-    for degree in motif:
-        note = _degree_to_midi(scale_notes, int(degree), octave_shift=1)
-        _append_note(track, note, velocity, 0.5, ticks_per_beat=ticks_per_beat)
+def _master_env(t: float, total_duration: float) -> float:
+    fade_in = _clamp(t / 1.4, 0.0, 1.0)
+    fade_out = _clamp((total_duration - t) / 1.8, 0.0, 1.0)
+    return fade_in * fade_out
 
 
-def _append_bass_bar(track, root: int, energy: int, ticks_per_beat: int = 480):
-    velocity = 64 + energy * 6
-    bass_root = root - 24
-    for _ in range(4):
-        _append_note(track, bass_root, velocity, 1.0, ticks_per_beat=ticks_per_beat)
-
-
-def _append_pad_bar(track, root: int, energy: int, ticks_per_beat: int = 480):
-    import mido
-    velocity = 42 + energy * 4
-    third = root + 4
-    fifth = root + 7
-    duration_ticks = int(4 * ticks_per_beat)
-
-    for note in (root, third, fifth):
-        track.append(mido.Message("note_on", note=note, velocity=velocity, time=0))
-    track.append(mido.Message("note_off", note=root, velocity=0, time=duration_ticks))
-    track.append(mido.Message("note_off", note=third, velocity=0, time=0))
-    track.append(mido.Message("note_off", note=fifth, velocity=0, time=0))
-
-
-def _append_drum_bar(track, energy: int, ticks_per_beat: int = 480):
-    import mido
-    kick = 36
-    snare = 38
-    hat = 42
-
-    events = [
-        (kick, 90, 0.0),
-        (hat, 56 + energy * 4, 0.0),
-        (hat, 56 + energy * 4, 0.5),
-        (snare, 80, 1.0),
-        (hat, 56 + energy * 4, 1.5),
-        (kick, 90, 2.0),
-        (hat, 56 + energy * 4, 2.0),
-        (hat, 56 + energy * 4, 2.5),
-        (snare, 82, 3.0),
-        (hat, 56 + energy * 4, 3.5),
-    ]
-
-    current_ticks = 0
-    for note, velocity, beat_pos in events:
-        event_ticks = int(beat_pos * ticks_per_beat)
-        delta = max(0, event_ticks - current_ticks)
-        track.append(mido.Message("note_on", channel=9, note=note, velocity=velocity, time=delta))
-        track.append(mido.Message("note_off", channel=9, note=note, velocity=0, time=int(0.08 * ticks_per_beat)))
-        current_ticks = event_ticks + int(0.08 * ticks_per_beat)
+def _soft_clip(x: float) -> float:
+    return math.tanh(x)
