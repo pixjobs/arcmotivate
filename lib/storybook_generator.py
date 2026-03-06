@@ -61,27 +61,85 @@ def generate_pixel_art_illustration(scene_description: str) -> str:
     )
     full_prompt = f"{scene_description}. Style: {style}"
 
-    config = types.GenerateContentConfig(
-        response_modalities=["IMAGE"],
+    contents = [
+        types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=full_prompt)],
+        ),
+    ]
+    
+    generate_content_config = types.GenerateContentConfig(
+        thinking_config=types.ThinkingConfig(
+            thinking_level="MINIMAL",
+        ),
+        image_config = types.ImageConfig(
+            aspect_ratio="16:9",
+            image_size="256",
+        ),
+        response_modalities=[
+            "IMAGE",
+            "TEXT",
+        ],
     )
 
     try:
-        response = client.models.generate_content(
+        for chunk in client.models.generate_content_stream(
             model="gemini-3.1-flash-image-preview",
-            contents=full_prompt,
-            config=config,
-        )
-
-        # Be robust about where the inline_data appears
-        if response.candidates:
-            for cand in response.candidates:
-                if not cand.content or not cand.content.parts:
-                    continue
-                for part in cand.content.parts:
-                    if part.inline_data and part.inline_data.data:
-                        return base64.b64encode(part.inline_data.data).decode("utf-8")
+            contents=contents,
+            config=generate_content_config,
+        ):
+            if chunk.parts is None:
+                continue
+            if getattr(chunk.parts[0], "inline_data", None) and chunk.parts[0].inline_data.data:
+                return base64.b64encode(chunk.parts[0].inline_data.data).decode("utf-8")
 
     except Exception as e:
         logger.error(f"Image gen failed: {e}")
 
     return ""
+
+def generate_comic_book(chat_history: list) -> list:
+    """
+    Analyzes the chat history to synthesize a 3-panel comic book.
+    Returns a list of dicts: {"caption": "...", "image_b64": "..."}.
+    """
+    client = get_client()
+
+    # Summarize chat history into narrative beats
+    history_text = "\n".join([f"{msg['role']}: {msg.get('text', msg.get('content', ''))}" for msg in chat_history if msg['role'] != 'system'])
+    
+    prompt = f"""
+    Based on the following career simulator conversation, create a 3-panel comic book narrative that highlights the user's journey.
+    Output EXACTLY 3 JSON objects in a JSON array. Each object MUST have:
+    - "caption": A short, punchy sentence narrating the scene.
+    - "image_prompt": A highly descriptive, visual prompt for generating a pixel-art illustration of that exact scene.
+
+    Conversation History:
+    {history_text}
+    """
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.7,
+                response_mime_type="application/json"
+            ),
+        )
+        import json
+        panels = json.loads(response.text)
+        
+        comic_data = []
+        for panel in panels:
+            img_prompt = panel.get("image_prompt", "")
+            img_b64 = generate_pixel_art_illustration(img_prompt) if img_prompt else ""
+            comic_data.append({
+                "caption": panel.get("caption", ""),
+                "image_b64": img_b64
+            })
+            
+        return comic_data
+    except Exception as e:
+        logger.error(f"Comic gen failed: {e}")
+        return []
