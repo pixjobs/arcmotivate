@@ -1133,7 +1133,6 @@ with gr.Blocks(title=APP_TITLE) as demo:
     with gr.Row(equal_height=False):
         with gr.Column(scale=6, min_width=380):
             chatbot = gr.Chatbot(
-                value=[{"role": "assistant", "content": render_interleaved_content(OPENING_MSG, enable_visuals=True)}],
                 height=620,
                 show_label=False,
                 elem_classes=["chat-wrap"],
@@ -1191,8 +1190,13 @@ if __name__ == "__main__":
     favicon = "assets/favicon.ico" if os.path.exists("assets/favicon.ico") else None
     port = int(os.environ.get("PORT", 8080))
 
+    # Use standard Gradio environment variables for port/name
+    # server_name/server_port are defined in the Dockerfile/environment
     demo.launch(
         server_name="0.0.0.0",
         server_port=port,
         favicon_path=favicon,
+        share=False,
+        theme=gr.themes.Base(),
+        css=css,
     )
