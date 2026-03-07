@@ -1109,7 +1109,7 @@ def refresh_panels(request: gr.Request):
     )
 
 
-with gr.Blocks(css=css, theme=gr.themes.Base(), title=APP_TITLE) as demo:
+with gr.Blocks(title=APP_TITLE) as demo:
     gr.HTML(
         """
         <div class='arc-header'>
@@ -1183,4 +1183,7 @@ if __name__ == "__main__":
         server_name="0.0.0.0",
         server_port=port,
         favicon_path=favicon,
+        share=False,
+        theme=gr.themes.Base(),
+        css=css,
     )
