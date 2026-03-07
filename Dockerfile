@@ -14,8 +14,9 @@ COPY . .
 # Set environment variable to bind Gradio to 0.0.0.0
 ENV GRADIO_SERVER_NAME="0.0.0.0"
 
-# Expose the Gradio port
-EXPOSE 7860
+# Expose the standard Cloud Run port
+EXPOSE 8080
 
 # Command to run the application
+# Use the dynamic PORT env var if available (handled in app.py)
 CMD ["python", "app.py"]
