@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import os
 from typing import Any, Dict, List, Optional
 from google import genai
 
@@ -10,8 +11,12 @@ TEXT_MODEL = "gemini-3.1-flash-lite-preview"
 STRUCTURED_MODEL = "gemini-3-flash-preview"
 IMAGE_MODEL = "gemini-3.1-flash-image-preview"
 
-def get_client():
-    return genai.Client()
+def get_client() -> genai.Client:
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable is missing. "
+                         "Check your Cloud Run 'Variables & Secrets' configuration.")
+    return genai.Client(api_key=api_key)
 
 # ============================================================
 # SMALL HELPERS

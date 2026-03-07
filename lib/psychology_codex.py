@@ -1,13 +1,18 @@
 import json
 import logging
+import os
 from typing import Dict, Any, Optional
 from google import genai
 from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-def get_client():
-    return genai.Client()
+def get_client() -> genai.Client:
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable is missing. "
+                         "Check your Cloud Run 'Variables & Secrets' configuration.")
+    return genai.Client(api_key=api_key)
 
 def map_narrative_to_superpowers(narrative: str, image_bytes: Optional[bytes] = None, image_mime: str = "image/jpeg") -> Dict[str, Any]:
     """
