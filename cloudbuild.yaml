@@ -13,14 +13,14 @@ steps:
     args:
       - 'run'
       - 'deploy'
-      - 'arcmotivate-service'
+      - 'arcmotivate'
       - '--image'
       - 'gcr.io/$PROJECT_ID/arcmotivate'
       - '--region'
       - 'us-central1'
       - '--allow-unauthenticated'
       - '--port'
-      - '7860'
+      - '8080'
 
 images:
   - 'gcr.io/$PROJECT_ID/arcmotivate'

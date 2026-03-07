@@ -1178,8 +1178,9 @@ with gr.Blocks(css=css, theme=gr.themes.Base(), title=APP_TITLE) as demo:
 
 if __name__ == "__main__":
     favicon = "assets/favicon.ico" if os.path.exists("assets/favicon.ico") else None
+    port = int(os.environ.get("PORT", 7860))
     demo.launch(
         server_name="0.0.0.0",
-        server_port=7860,
+        server_port=port,
         favicon_path=favicon,
     )
