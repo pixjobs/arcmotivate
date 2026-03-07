@@ -21,7 +21,12 @@ DEFAULT_TEMPERATURE = 0.65
 
 
 def get_client() -> genai.Client:
-    return genai.Client()
+    import os
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GOOGLE_API_KEY environment variable is missing. "
+                         "Check your Cloud Run 'Variables & Secrets' configuration.")
+    return genai.Client(api_key=api_key)
 
 
 def _normalize_role(role: str) -> str:

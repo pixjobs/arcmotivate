@@ -27,6 +27,7 @@ ArcMotivate is a high-performance career simulator that bridges the gap between 
     *   Add your Gemini API Key as the secret value.
     *   Grant the **Secret Manager Secret Accessor** role to your Cloud Run service account (`cloud-run-sa@...`).
     *   **Crucial**: Grant the **Service Account User** role to the Cloud Build service account (`[PROJECT_NUMBER]@cloudbuild.gserviceaccount.com`) on the Cloud Run service account to allow the deploy to finish.
+    *   **Manual Mapping**: If the build succeeds but the app fails to start, go to **Cloud Run > Edit & Deploy New Revision > Variables & Secrets** and manually map the `gemini-api-key` secret to the `GOOGLE_API_KEY` environment variable.
 3.  **Deploy**: The included `cloudbuild.yaml` automatically maps the secret to `GOOGLE_API_KEY`.
     *   *Note*: If the build fails initially, ensure the `gemini-api-key` secret actually exists in Secret Manager.
 
