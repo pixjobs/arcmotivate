@@ -19,6 +19,14 @@ ArcMotivate is a high-performance career simulator that bridges the gap between 
 - **Frontend**: Gradio-based SPA with custom retro/cyberpunk styling.
 - **State Engine**: Thread-safe session management for background identity generation.
 
+### ☁️ Cloud Run Deployment
+
+1.  **Connect Repo**: Point your Cloud Run service to this repository.
+2.  **Env Vars**: In the Google Cloud Console (Cloud Run -> Edit & Deploy New Revision), add:
+    *   `GOOGLE_API_KEY`: Your Gemini API Key.
+    *   `PORT`: `8080` (Standard for Cloud Run, handled automatically by `app.py`).
+3.  **Deploy**: The included `Dockerfile` and `cloudbuild.yaml` handle the rest.
+
 ## Spin-Up Instructions
 
 ### 1. Prerequisites
