@@ -19,11 +19,11 @@ def map_narrative_to_superpowers(narrative: str, image_bytes: Optional[bytes] = 
 
     # Base fallback in case of empty input or API failure
     fallback_response = {
-        "primary": "The Explorer",
-        "secondary": "Curiosity-Driven",
-        "superpower": "Openness to Experience",
-        "description": "You learn best by trying things, noticing what feels exciting, and following the threads that spark your curiosity.",
-        "growth_nudge": "Try exploring one completely new hobby or topic this week just for the fun of it!"
+        "primary": "The Technical Explorer",
+        "secondary": "Software Engineering & Systems",
+        "superpower": "Logical Problem Solving",
+        "description": "You learn best by breaking complex systems down to understand how they work, pushing you toward paths where logic and creativity meet.",
+        "growth_nudge": "Try researching different technical career roles this week to see what sparks your curiosity."
     }
 
     if not narrative or not narrative.strip():
@@ -46,26 +46,26 @@ The person shared this about themselves:
 
 Output ONLY valid JSON with these exact fields:
 
-- primary: A broad curiosity identity using "The ___" format. 
-  (e.g., "The Maker", "The Storyteller", "The Catalyst", "The Innovator", "The Harmonizer", "The Observer", "The Navigator").
-  RULES: MUST start with "The". NO job titles or career labels (no "Engineer", "Manager"). Keep it timeless.
+- primary: A broad Career Archetype using "The ___" format. 
+  (e.g., "The Technical Maker", "The Data Storyteller", "The UX Catalyst", "The Systems Innovator").
+  RULES: MUST start with "The". Bridge their curiosity into a real professional identity.
 
-- secondary: A short engagement style tag based on their Multiple Intelligences or SDT.
-  (e.g., "Hands-On Builder", "Big-Picture Thinker", "Nature Connected", "People-Focused", "Rhythm & Flow"). 
-  RULES: Pure style, no career language.
+- secondary: A concrete career domain or industry focus.
+  (e.g., "Software Engineering", "Renewable Energy", "Healthcare Technology", "Financial Analysis", "Product Design"). 
+  RULES: Concrete industry or career cluster.
 
-- superpower: A short phrase capturing their core VIA Character Strength.
-  (e.g., "Creative Problem Solving", "Boundless Empathy", "Fearless Curiosity", "Quiet Perseverance").
+- superpower: A short phrase capturing their core professional strength.
+  (e.g., "Creative Problem Solving", "Analytical Rigor", "Systems Architecture", "User-Centric Empathy").
 
-- description: EXACTLY ONE sentence linking what they shared to what energizes them. 
-  Start with "You". Keep it warm, validating, and deeply personal. Show you were listening by referencing a specific detail they mentioned.
+- description: EXACTLY ONE sentence linking what they shared to the specific career domain they might thrive in. 
+  Start with "You". Actively map their traits to real-world roles. Show you were listening by referencing a specific detail they mentioned.
 
-- growth_nudge: A short, encouraging "next step" rooted in a Growth Mindset. 
-  Suggest a fun, low-pressure way they can stretch this superpower or try something slightly outside their comfort zone to keep growing.
+- growth_nudge: A short, actionable "next step" to explore this career path. 
+  Suggest looking up a specific job title, finding a beginner project in that industry, or checking out what a day in the life of that role looks like.
 
 Constraints:
-- NO career, job, or diagnostic/clinical language whatsoever.
-- Highly suitable, accessible, and encouraging for ages 8–18.
+- NO diagnostic/clinical language whatsoever.
+- Ground the language in real-world professional development and job exploration suitable for youth 8–18.
 """
 
     schema = {
@@ -85,10 +85,9 @@ Constraints:
         if image_bytes:
             parts.append(types.Part.from_bytes(data=image_bytes, mime_type=image_mime))
 
-        # Note: Upgraded to gemini-2.5-flash as it is exceptional at complex schema adherence 
-        # and psychological synthesis.
+
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
             contents=[types.Content(role="user", parts=parts)],
             config=types.GenerateContentConfig(
                 temperature=0.6, # Slightly higher temperature for more creative/diverse archetypes

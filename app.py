@@ -19,8 +19,9 @@ from lib.coaching_agent import generate_socratic_stream
 from lib.outcome_engine import synthesize_single_tile
 from lib.storybook_generator import (
     generate_custom_avatar,
-    generate_custom_song,
     generate_hero_recap,
+    generate_identity_comic,
+    generate_future_postcard,
     generate_pixel_art_illustration,
 )
 
@@ -309,7 +310,122 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 .canvas-empty-text{max-width:250px;font-size:1rem;line-height:1.35;color:#7b8ba3}
 .synth-spinner{padding:16px;text-align:center;color:#a78bfa;font-size:1rem;font-style:italic}
 
-/* Inline image grid */
+/* Inline chat skill card */
+.chat-skill-card{
+  display:flex;align-items:flex-start;gap:12px;margin:12px 0;
+  padding:14px 16px;border-radius:14px;
+  background:linear-gradient(135deg,rgba(139,92,246,.08),rgba(34,211,238,.06));
+  border:1px solid rgba(139,92,246,.18);position:relative;overflow:hidden
+}
+.chat-skill-card::before{
+  content:'';position:absolute;top:0;left:0;width:4px;height:100%;
+  background:linear-gradient(180deg,var(--violet),var(--cyan));border-radius:4px 0 0 4px
+}
+.chat-skill-icon{font-size:1.5rem;flex-shrink:0;margin-top:2px}
+.chat-skill-body{flex:1;min-width:0}
+.chat-skill-name{font:700 .92rem/1.2 var(--font-accent);color:var(--text-glow);margin-bottom:4px}
+.chat-skill-try{font:.88rem/1.35 var(--font-ui);color:var(--text-soft);margin-bottom:8px}
+.chat-skill-link{
+  display:inline-flex;align-items:center;gap:4px;padding:6px 12px;
+  border-radius:8px;background:rgba(139,92,246,.12);color:var(--cyan);
+  font:700 .78rem/1 var(--font-accent);letter-spacing:.03em;text-decoration:none;
+  border:1px solid rgba(34,211,238,.12);transition:all .2s
+}
+.chat-skill-link:hover{background:rgba(139,92,246,.22);box-shadow:var(--glow-soft)}
+
+/* Tile skill tags */
+.tile-skill-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.tile-skill-tag{
+  display:inline-block;padding:3px 8px;border-radius:6px;
+  background:rgba(139,92,246,.1);color:var(--cyan);
+  font:600 .72rem/1.1 var(--font-accent);letter-spacing:.02em;
+  border:1px solid rgba(34,211,238,.08)
+}
+
+/* Interleaved inline image */
+.chat-inline-visual{
+  margin:14px 0;border-radius:12px;overflow:hidden;
+  border:1px solid rgba(34,211,238,.16);box-shadow:var(--glow-soft)
+}
+.chat-inline-visual img{
+  display:block;width:100%;max-height:220px;object-fit:cover
+}
+
+/* Inline audio player */
+.chat-audio-wrap{
+  margin:12px 0;padding:12px 16px;border-radius:14px;
+  background:linear-gradient(135deg,rgba(139,92,246,.06),rgba(34,211,238,.04));
+  border:1px solid rgba(139,92,246,.12);
+  display:flex;align-items:center;gap:10px
+}
+.chat-audio-label{font:600 .82rem/1.1 var(--font-accent);color:var(--text-glow);white-space:nowrap}
+.chat-audio-wrap audio{flex:1;max-width:100%;height:32px;opacity:.85}
+
+/* Ambient audio in header */
+.ambient-audio-wrap{
+  display:inline-flex;align-items:center;gap:6px;margin-left:10px;
+  padding:4px 10px;border-radius:8px;background:rgba(139,92,246,.08);
+  border:1px solid rgba(139,92,246,.12)
+}
+.ambient-audio-title{font:.75rem/1.1 var(--font-accent);color:var(--text-soft)}
+.ambient-mute-btn{
+  background:none;border:none;color:var(--cyan);cursor:pointer;
+  font-size:.9rem;padding:2px;line-height:1
+}
+
+/* Story card */
+.story-card{
+  padding:24px;border-radius:18px;
+  background:linear-gradient(145deg,rgba(15,10,30,.95),rgba(20,15,40,.9));
+  border:1px solid rgba(139,92,246,.14);box-shadow:var(--shadow-2)
+}
+.story-card-title{
+  font:800 1.3rem/1.2 var(--font-accent);letter-spacing:.06em;
+  background:linear-gradient(90deg,var(--violet),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  margin-bottom:18px
+}
+.story-section{margin-bottom:20px}
+.story-section-label{font:700 .78rem/1 var(--font-accent);color:var(--cyan);letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px}
+.story-narrative{font:.95rem/1.6 var(--font-ui);color:var(--text-soft)}
+.story-avatar{
+  width:120px;height:120px;border-radius:50%;object-fit:cover;
+  border:2px solid rgba(139,92,246,.3);box-shadow:var(--glow-soft);
+  margin:0 auto;display:block
+}
+.story-audio-player{width:100%;height:36px;opacity:.8;border-radius:8px}
+
+/* Comic strip */
+.story-comic-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:8px}
+.story-comic-panel{
+  border-radius:12px;overflow:hidden;background:rgba(255,255,255,.02);
+  border:1px solid rgba(34,211,238,.1)
+}
+.story-comic-panel img{display:block;width:100%;height:100px;object-fit:cover}
+.story-comic-caption{
+  padding:8px 10px;font:.82rem/1.3 var(--font-ui);color:var(--text-soft);text-align:center
+}
+
+/* Future postcard */
+.story-postcard{
+  padding:18px;border-radius:14px;
+  background:linear-gradient(135deg,rgba(139,92,246,.08),rgba(34,211,238,.05));
+  border:1px solid rgba(139,92,246,.12);text-align:center
+}
+.story-postcard img{
+  display:block;width:100%;max-height:160px;object-fit:cover;border-radius:10px;margin-bottom:10px
+}
+.story-postcard-caption{font:600 .95rem/1.4 var(--font-ui);color:var(--text-glow)}
+
+/* Growth nudge */
+.story-nudge{
+  padding:12px 16px;border-radius:12px;
+  background:linear-gradient(135deg,rgba(34,211,238,.06),rgba(139,92,246,.04));
+  border:1px solid rgba(34,211,238,.1);
+  font:.9rem/1.5 var(--font-ui);color:var(--text-soft)
+}
+.story-nudge strong{color:var(--cyan)}
+
+/* Inline image grid (legacy compat) */
 .chat-comic-grid{
   display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:12px
 }
@@ -346,6 +462,10 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
   .chat-comic-grid{grid-template-columns:repeat(2,1fr);gap:8px}
   .chat-comic-grid img{height:88px}
   .identity-meta{grid-template-columns:1fr}
+  .story-comic-strip{grid-template-columns:1fr;gap:8px}
+  .story-comic-panel img{height:120px}
+  .chat-skill-card{flex-direction:column;gap:8px}
+  .chat-inline-visual img{max-height:160px}
 }
 
 @media (max-width:480px){
@@ -379,6 +499,8 @@ def _default_session_store() -> Dict[str, Any]:
         "avatar_b64": "",
         "song": {},
         "recap": "",
+        "comic_panels": [],
+        "postcard": {},
         "identity_jobs": [],
         "identity_running": False,
         "last_identity_error": None,
@@ -465,6 +587,10 @@ def clean_message_for_backend(content: Any) -> str:
         return ""
     text = re.sub(r"<img[^>]*>", "", text, flags=re.IGNORECASE)
     text = re.sub(r"<div[^>]*>.*?</div>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<audio[^>]*>.*?</audio>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    # Strip multimodal markers so they don't pollute backend history
+    text = _RE_VISUALIZE.sub("", text)
+    text = _RE_SKILL.sub("", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
@@ -550,6 +676,102 @@ def format_inline_images(image_b64_list: List[str]) -> str:
     return f"<div class='chat-comic-grid'>{''.join(tags)}</div>"
 
 
+# ── Interleaved content helpers ──────────────────────────────
+
+_RE_VISUALIZE = re.compile(r"\[VISUALIZE:\s*(.+?)\]", re.DOTALL)
+_RE_SKILL = re.compile(r"\[SKILL:\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\]", re.DOTALL)
+
+
+def format_skill_card(name: str, url: str, try_this: str) -> str:
+    s_name = safe_text(name.strip())
+    s_url = html.escape(url.strip(), quote=True)
+    s_try = safe_text(try_this.strip())
+    return (
+        f"<div class='chat-skill-card'>"
+        f"<div class='chat-skill-icon'>🎯</div>"
+        f"<div class='chat-skill-body'>"
+        f"<div class='chat-skill-name'>{s_name}</div>"
+        f"<div class='chat-skill-try'>{s_try}</div>"
+        f"<a class='chat-skill-link' href='{s_url}' target='_blank' rel='noopener noreferrer'>🔗 Explore</a>"
+        f"</div>"
+        f"</div>"
+    )
+
+
+def format_inline_visual_html(image_b64: str) -> str:
+    safe_b64 = html.escape(image_b64, quote=True)
+    return (
+        f"<div class='chat-inline-visual'>"
+        f"<img src='data:image/png;base64,{safe_b64}' alt='visual metaphor'>"
+        f"</div>"
+    )
+
+
+def format_inline_audio_html(audio_b64: str, title: str = "Your theme") -> str:
+    safe_title = safe_text(title)
+    return (
+        f"<div class='chat-audio-wrap'>"
+        f"<div class='chat-audio-label'>🎵 {safe_title} (Playing in background)</div>"
+        f"</div>"
+    )
+
+
+def render_interleaved_content(
+    raw_text: str,
+) -> str:
+    """Parse marker-laden text and produce interleaved HTML.
+
+    Returns html_string.
+    """
+    parts: List[str] = []
+    remainder = raw_text
+
+    while remainder:
+        # Find the earliest marker
+        vis_m = _RE_VISUALIZE.search(remainder)
+        skill_m = _RE_SKILL.search(remainder)
+
+        earliest = None
+        earliest_pos = len(remainder)
+
+        for m in (vis_m, skill_m):
+            if m and m.start() < earliest_pos:
+                earliest = m
+                earliest_pos = m.start()
+
+        if earliest is None:
+            # No more markers — emit remaining text
+            text_chunk = remainder.strip()
+            if text_chunk:
+                parts.append(text_chunk)
+            break
+
+        # Emit text before marker
+        before = remainder[:earliest_pos].strip()
+        if before:
+            parts.append(before)
+
+        # Process the marker
+        if earliest is vis_m:
+            prompt = vis_m.group(1).strip()
+            img_b64 = maybe_generate_inline_visual(prompt)
+            if img_b64:
+                parts.append(format_inline_visual_html(img_b64))
+            remainder = remainder[vis_m.end():]
+
+        elif earliest is skill_m:
+            name = skill_m.group(1).strip()
+            url = skill_m.group(2).strip()
+            try_this = skill_m.group(3).strip()
+            parts.append(format_skill_card(name, url, try_this))
+            remainder = remainder[skill_m.end():]
+
+        else:
+            break
+
+    return "\n\n".join(parts)
+
+
 def format_canvas(tiles: List[Dict[str, Any]]) -> str:
     if not tiles:
         return """
@@ -590,6 +812,8 @@ def format_canvas(tiles: List[Dict[str, Any]]) -> str:
                     <div class='tile-category'>{safe_text(tile.get('category', 'Signal'))}</div>
                     <h3 class='tile-title'>{safe_text(tile.get('title', '—'))}</h3>
                     <p class='tile-desc'>{safe_text(tile.get('content', ''))}</p>
+                    {"".join(f"<span class='tile-skill-tag'>{safe_text(tag)}</span>" for tag in (tile.get('skill_tags') or [])[:3])}
+                    {f"<p class='tile-desc' style='margin-top:6px;font-style:italic'>{safe_text(tile.get('skill_nudge', ''))}</p>" if tile.get('skill_nudge') else ""}
                     <div class='tile-links'>{"".join(links_html)}</div>
                 </div>
             </div>
@@ -627,6 +851,7 @@ def get_header_status_html(store: Dict[str, Any]) -> str:
         running_identity = bool(store.get("identity_running"))
         turn_count = int(store.get("turn_count", 0))
         tiles_count = len(store.get("tiles", []))
+        song = store.get("song") or {}
 
     is_busy = running_workspace or pending_workspace or running_identity
     status_class = "arc-status is-busy" if is_busy else "arc-status"
@@ -638,12 +863,37 @@ def get_header_status_html(store: Dict[str, Any]) -> str:
     else:
         text = f"{tiles_count} workspace artifact(s) · {turn_count} turn(s) explored"
 
+    # Ambient audio player (auto-play, loop, low volume)
+    ambient_html = ""
+    audio_b64 = song.get("audio_b64", "")
+    if audio_b64:
+        song_title = safe_text(song.get("title", "Your theme"))
+        ambient_html = f"""
+        <span class='ambient-audio-wrap'>
+            <span class='ambient-audio-title'>🎵 {song_title}</span>
+            <button class='ambient-mute-btn' onclick="
+                var a=document.getElementById('arc-ambient-audio');
+                if(a){{a.muted=!a.muted;this.textContent=a.muted?'🔇':'🔊'}}
+            ">🔊</button>
+            <audio id='arc-ambient-audio' autoplay loop
+                   src='data:audio/wav;base64,{html.escape(audio_b64, quote=True)}'
+                   style='display:none'></audio>
+            <script>
+                (function(){{
+                    var a=document.getElementById('arc-ambient-audio');
+                    if(a){{a.volume=0.07}}
+                }})();
+            </script>
+        </span>
+        """
+
     return f"""
     <div class='arc-status-wrap'>
         <div class='{status_class}'>
             <span class='arc-status-dot'></span>
             <span class='arc-status-label'>{label}</span>
             <span class='arc-status-text'>{safe_text(text)}</span>
+            {ambient_html}
         </div>
     </div>
     """
@@ -654,56 +904,119 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
         avatar_b64 = store.get("avatar_b64", "")
         song = deepcopy(store.get("song", {}))
         recap = store.get("recap", "")
+        superpowers = deepcopy(store.get("superpowers", {}))
+        comic_panels = deepcopy(store.get("comic_panels", []))
+        postcard = deepcopy(store.get("postcard", {}))
         identity_running = bool(store.get("identity_running"))
         identity_jobs = len(store.get("identity_jobs", []))
         last_identity_error = store.get("last_identity_error")
 
+    is_building = identity_running or identity_jobs
+    has_content = bool(avatar_b64 or recap or song)
+
+    if not has_content and not is_building:
+        return """
+        <div class='canvas-empty'>
+            <div class='canvas-empty-icon'>🧬</div>
+            <div class='canvas-empty-text'>Start chatting to build your exploration story.</div>
+        </div>
+        """
+
+    sections: List[str] = []
+
+    # Busy indicator
+    if is_building:
+        sections.append("<div class='synth-spinner'>🎛️ Building your exploration story...</div>")
+    if last_identity_error:
+        sections.append("<div class='identity-note'>⚠️ Identity build hit a snag. Keep chatting and try again.</div>")
+
+    # ── Narrative ──
+    if recap:
+        sections.append(f"""
+        <div class='story-section'>
+            <div class='story-section-label'>📖 Your Story</div>
+            <div class='story-narrative'>{safe_text(recap)}</div>
+        </div>
+        """)
+
+    # ── Avatar ──
     if avatar_b64:
-        avatar_html = f"<img class='identity-avatar' src='data:image/png;base64,{html.escape(avatar_b64, quote=True)}' alt='Custom avatar'>"
-    else:
-        avatar_html = "<div class='identity-avatar-placeholder'>🧬</div>"
-
-    title = safe_text(song.get("title", "No song yet"))
-    subtitle = safe_text(song.get("subtitle", "Talk with Arc to generate your anthem"))
-    bpm = safe_text(song.get("bpm", "—"))
-    mood = safe_text(song.get("spec", {}).get("mood", "Still forming"))
-
-    busy_html = "<div class='synth-spinner'>🎛️ Forging your avatar and anthem...</div>" if (identity_running or identity_jobs) else ""
-    error_html = "<div class='identity-note'>⚠️ Identity build hit a snag. Keep chatting and try again in a moment.</div>" if last_identity_error else ""
-    recap_html = f"<div class='identity-note'>{safe_text(recap)}</div>" if recap else ""
-
-    return f"""
-    <div class='identity-stack'>
-      <div class='identity-card'>
-        <div class='identity-head'>
-          <div>
-            <div class='identity-kicker'>Identity Artifact</div>
-            <div class='identity-title'>Custom Avatar</div>
-          </div>
+        sections.append(f"""
+        <div class='story-section' style='text-align:center'>
+            <div class='story-section-label'>🎭 Your Avatar</div>
+            <img class='story-avatar' src='data:image/png;base64,{html.escape(avatar_b64, quote=True)}' alt='Custom avatar'>
         </div>
-        {avatar_html}
-      </div>
+        """)
 
-      <div class='identity-card'>
-        <div class='identity-head'>
-          <div>
-            <div class='identity-kicker'>Audio Artifact</div>
-            <div class='identity-title'>This Is My Song</div>
-          </div>
+    # ── Soundtrack ──
+    if song:
+        title = safe_text(song.get("title", "Your Theme"))
+        audio_b64 = song.get("audio_b64", "")
+        if audio_b64:
+            sections.append(f"""
+            <div class='story-section'>
+                <div class='story-section-label'>🎵 Soundtrack: {title}</div>
+                <audio class='story-audio-player' controls src='data:audio/wav;base64,{html.escape(audio_b64, quote=True)}'></audio>
+            </div>
+            """)
+        else:
+            mood = safe_text(song.get("spec", {}).get("mood", "Still forming"))
+            sections.append(f"""
+            <div class='story-section'>
+                <div class='story-section-label'>🎵 Soundtrack</div>
+                <div class='story-narrative'><em>{title}</em> — {mood}</div>
+            </div>
+            """)
+
+    # ── 3-Panel Comic ──
+    if comic_panels:
+        panel_html_parts: List[str] = []
+        for panel in comic_panels[:3]:
+            img_b64 = panel.get("image_b64", "")
+            caption = safe_text(panel.get("caption", ""))
+            if img_b64:
+                img_tag = f"<img src='data:image/png;base64,{html.escape(img_b64, quote=True)}' alt='comic panel'>"
+            else:
+                img_tag = "<div style='height:100px;display:flex;align-items:center;justify-content:center;color:#64748b'>🎨</div>"
+            panel_html_parts.append(f"""
+            <div class='story-comic-panel'>
+                {img_tag}
+                <div class='story-comic-caption'>{caption}</div>
+            </div>
+            """)
+        sections.append(f"""
+        <div class='story-section'>
+            <div class='story-section-label'>🎬 Your Journey</div>
+            <div class='story-comic-strip'>{''.join(panel_html_parts)}</div>
         </div>
-        <div class='identity-copy'>{subtitle}</div>
-        <div class='identity-meta'>
-          <div class='identity-pill'><strong>Title</strong><br>{title}</div>
-          <div class='identity-pill'><strong>BPM</strong><br>{bpm}</div>
-          <div class='identity-pill'><strong>Mood</strong><br>{mood}</div>
-          <div class='identity-pill'><strong>Status</strong><br>{"Ready soon" if (identity_running or identity_jobs) else "Waiting"}</div>
+        """)
+
+    # ── Future Postcard ──
+    if postcard and postcard.get("caption"):
+        postcard_img = postcard.get("image_b64", "")
+        postcard_caption = safe_text(postcard.get("caption", ""))
+        img_html = f"<img src='data:image/png;base64,{html.escape(postcard_img, quote=True)}' alt='future postcard'>" if postcard_img else ""
+        sections.append(f"""
+        <div class='story-section'>
+            <div class='story-section-label'>💌 Postcard from Future You</div>
+            <div class='story-postcard'>
+                {img_html}
+                <div class='story-postcard-caption'>{postcard_caption}</div>
+            </div>
         </div>
-        {recap_html}
-        {busy_html}
-        {error_html}
-      </div>
-    </div>
-    """
+        """)
+
+    # ── Growth Nudge ──
+    growth_nudge = superpowers.get("growth_nudge", "")
+    if growth_nudge:
+        sections.append(f"""
+        <div class='story-section'>
+            <div class='story-section-label'>🌱 Next Level</div>
+            <div class='story-nudge'><strong>Try this:</strong> {safe_text(growth_nudge)}</div>
+        </div>
+        """)
+
+    return f"<div class='story-card'><div class='story-card-title'>Your Exploration Story</div>{''.join(sections)}</div>"
 
 
 # ============================================================
@@ -761,15 +1074,21 @@ def identity_worker(session_id: str) -> None:
                 store["identity_running"] = False
                 return
             job = store["identity_jobs"].pop(0)
+            existing_avatar = store.get("avatar_b64")
+            existing_song = store.get("song")
+            existing_recap = store.get("recap")
+            existing_comic = store.get("comic_panels")
+            existing_postcard = store.get("postcard")
 
         try:
             profile = deepcopy(job["superpowers"])
             history = deepcopy(job["history"])
             latest_signal = job.get("latest_signal", "")
 
-            avatar_b64 = generate_custom_avatar(profile, latest_signal=latest_signal)
-            song = generate_custom_song(profile, recent_chat=history)
-            recap = generate_hero_recap(profile)
+            avatar_b64 = existing_avatar or generate_custom_avatar(profile, latest_signal=latest_signal)
+            recap = existing_recap or generate_hero_recap(profile)
+            comic_panels = existing_comic or generate_identity_comic(profile, recent_chat=history)
+            postcard = existing_postcard or generate_future_postcard(profile, recent_chat=history)
         except Exception:
             logger.exception("Identity build error")
             with store["lock"]:
@@ -779,12 +1098,12 @@ def identity_worker(session_id: str) -> None:
         with store["lock"]:
             if avatar_b64:
                 store["avatar_b64"] = avatar_b64
-            if song:
-                store["song"] = song
-                midi_path = str(song.get("midi_path", "")).strip()
-                store["midi_path"] = midi_path
             if recap:
                 store["recap"] = recap
+            if comic_panels:
+                store["comic_panels"] = comic_panels
+            if postcard:
+                store["postcard"] = postcard
             store["last_identity_error"] = None
             store["last_seen_at"] = time.time()
 
@@ -960,7 +1279,6 @@ def process_simulation(
 
     accumulated_text = ""
     inline_images: List[str] = []
-    recovered_prompt: Optional[str] = None
     last_ui_flush = 0.0
 
     try:
@@ -977,15 +1295,17 @@ def process_simulation(
         chunk_type = chunk.get("type")
 
         if chunk_type == "text":
-            accumulated_text += chunk.get("data", "")
-            display_text, prompt_from_json, _ = extract_tool_json_and_display_text(accumulated_text)
-
-            if prompt_from_json and not recovered_prompt:
-                recovered_prompt = prompt_from_json
+            accumulated_text = str(accumulated_text) + str(chunk.get("data", ""))
+            display_text, _, _ = extract_tool_json_and_display_text(accumulated_text)
 
             now = time.monotonic()
             if (now - last_ui_flush) >= STREAM_UPDATE_INTERVAL_SEC:
-                history[-1]["content"] = display_text or "🧠 *Thinking...*"
+                # During streaming, show raw text (markers will be rendered at the end)
+                preview = display_text or "🧠 *Thinking...*"
+                # Strip markers from preview for cleaner streaming
+                preview = _RE_VISUALIZE.sub("🎨 *generating visual…*", preview)
+                preview = _RE_SKILL.sub("🎯 *loading skill…*", preview)
+                history[-1]["content"] = preview
                 yield history, gr.update()
                 last_ui_flush = now
 
@@ -993,22 +1313,22 @@ def process_simulation(
             image_b64 = chunk.get("data")
             if image_b64 and len(inline_images) < MAX_INLINE_IMAGES_PER_TURN:
                 inline_images.append(image_b64)
-                base_text = history[-1]["content"] or extract_tool_json_and_display_text(accumulated_text)[0]
-                history[-1]["content"] = (base_text + "\n\n" + format_inline_images(inline_images)).strip()
-                yield history, gr.update()
 
-    final_display_text, _, _ = extract_tool_json_and_display_text(accumulated_text)
-    history[-1]["content"] = final_display_text or "…"
+    # ── Final rendering: interleave text, images, skills, and audio ──
+    final_text, _, _ = extract_tool_json_and_display_text(accumulated_text)
+    if not final_text:
+        final_text = "…"
 
-    if recovered_prompt and len(inline_images) < MAX_INLINE_IMAGES_PER_TURN:
-        yield history, gr.update()
-        img_b64 = maybe_generate_inline_visual(recovered_prompt)
-        if img_b64:
-            inline_images.append(img_b64)
+    # Render interleaved content from markers
+    interleaved_html = render_interleaved_content(
+        final_text
+    )
 
+    # Append any model-generated images that came via the stream
     if inline_images:
-        history[-1]["content"] = (final_display_text + "\n\n" + format_inline_images(inline_images)).strip()
+        interleaved_html += "\n\n" + format_inline_images(inline_images)
 
+    history[-1]["content"] = interleaved_html
     yield history, render_canvas_with_status(store)
 
 
@@ -1097,7 +1417,7 @@ with gr.Blocks(css=css, theme=gr.themes.Base(), title=APP_TITLE) as demo:
                 with gr.TabItem("⚡ Agent Workspace"):
                     canvas_output = gr.HTML(render_canvas_with_status(_default_session_store()))
 
-                with gr.TabItem("🧬 Identity Lab"):
+                with gr.TabItem("🧬 Your Story"):
                     identity_output = gr.HTML(render_identity_lab(_default_session_store()))
                     midi_download = gr.File(
                         label="Download your song",
