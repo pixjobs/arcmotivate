@@ -11,8 +11,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Set environment variable to bind Gradio to 0.0.0.0
+# Set environment variables for Gradio stability on Cloud Run
 ENV GRADIO_SERVER_NAME="0.0.0.0"
+ENV GRADIO_ANALYTICS_ENABLED="False"
 
 # Expose the standard Cloud Run port
 EXPOSE 8080
