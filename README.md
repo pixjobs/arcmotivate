@@ -1,35 +1,51 @@
-# ArcMotivate 🕹️
+# ArcMotivate - Your Interactive Career Exploration Agent 🕹️
 
-**Interactive Career Simulator for Young Minds**
+ArcMotivate is a high-performance career simulator that bridges the gap between personality traits and professional roles for users aged 8–18. It uses a Socratic coaching loop and visual artifacts to help users discover realistic career paths.
 
-> **Note:** This submission was generated for the showcase hackathon requiring entrants to develop a NEW next-generation AI Agent that utilizes multimodal inputs and outputs, moving beyond simple text-in/text-out interactions, and leveraging Google’s Live API with the creative power of image generation to solve complex problems and create entirely new user experiences (specifically within the "Creative Storyteller" or "Live Agents" category).
+## Core Logic
 
-ArcMotivate is a sleek, modern, and realistic career exploration simulator designed for users aged 8–18. It goes beyond patronizing or unrealistic career ideas and provides grounded, actionable, contemporary industry insights. 
+- **Professional Archetyping**: Analyzes chat and images to map user interests to "Professional Archetypes" (e.g., *The Technical Maker*, *The Data Storyteller*).
+- **Interleaved Visuals**: Streams neon pixel-art metaphors directly into the chat flow using Gemini-powered markers.
+- **Career Tiles**: Dynamically generates interactive cards featuring job titles, industry skill tags, actionable nudges, and direct Google search links.
+- **Identity Snapshot**: A periodic background process that asynchronously builds a persistent identity:
+    - **Custom Avatar**: Personalized profile icon.
+    - **Identity Comic**: 3-panel pixel-art story of your exploration.
+    - **Future Postcard**: A forward-looking visual and message from your "future self".
+- **Silent UX**: Focused, distraction-free interface optimized for performance.
 
-## Features
+## Tech Stack
 
-- **Socratic Career Coaching:** A responsive chat agent powered by Gemini that takes it slow, asking deeply engaging questions one at a time to build a realistic career trajectory.
-- **Multimodal Live Canvas:** During the conversation, a background AI engine analyzes your choices and streams uniquely generated pixel-art Canvas Tiles into an interactive masonry grid. Each tile represents a learned skill, discovered trait, or active quest.
-- **Career Comic Book:** Turn your entire career exploration session into a synthesized 3-panel comic book with custom pixel-art illustrations.
-- **Session State Management:** Secure, dynamic session tracking using Gradio's state objects without requiring an external database.
+- **Large Language Models**: Powered by the Gemini Flash family for low-latency reasoning and image generation.
+- **Frontend**: Gradio-based SPA with custom retro/cyberpunk styling.
+- **State Engine**: Thread-safe session management for background identity generation.
 
-## Technologies Used
+## Spin-Up Instructions
 
-- **Google GenAI Python SDK** (Powered by `gemini-3-flash-preview` and `gemini-3.1-flash-image-preview`)
-- **Gradio** (For real-time streaming and multimodal UI)
-- **Vanilla CSS** (For a retro-arcade, neon cyberpunk aesthetic)
+### 1. Prerequisites
+- Python 3.10+
+- A Google Gemini API Key
 
-## Setup & Running
+### 2. Setup
+```bash
+# Clone the repository
+cd arcmotivate
 
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. Set up your `.env` file with your Gemini API Key:
-   ```
-   GEMINI_API_KEY="your_api_key_here"
-   ```
-3. Run the application:
-   ```bash
-   python3 app.py
-   ```
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 3. Configuration
+Create a `.env` file in the root directory:
+```env
+GOOGLE_API_KEY="your_api_key_here"
+```
+
+### 4. Run
+```bash
+python app.py
+```
+The interface will be available at `http://localhost:7860`.
