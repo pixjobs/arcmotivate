@@ -42,11 +42,15 @@ FALLBACK_OPENING_MSG = (
     "You can type a message or attach an image, and we’ll explore it together."
 )
 
-try:
-    OPENING_MSG = generate_intro_message() or FALLBACK_OPENING_MSG
-except Exception:
-    logger.exception("Failed to generate opening message")
-    OPENING_MSG = FALLBACK_OPENING_MSG
+def get_opening_message():
+    try:
+        return generate_intro_message() or FALLBACK_OPENING_MSG
+    except Exception:
+        logger.exception("Failed to generate opening message")
+        return FALLBACK_OPENING_MSG
+
+# We will initialize this lazily inside the Gradio Blocks to avoid module-level API calls during startup
+OPENING_MSG = FALLBACK_OPENING_MSG
 
 STREAM_UPDATE_INTERVAL_SEC = 0.05
 MAX_CHAT_CONTEXT_MESSAGES = 12
@@ -1100,6 +1104,11 @@ def run_turn(
     )
 
 
+def handle_startup_load():
+    """Generates the fresh opening message lazily on first load."""
+    msg = get_opening_message()
+    return [{"role": "assistant", "content": render_interleaved_content(msg, enable_visuals=True)}]
+
 def refresh_panels(request: gr.Request):
     store = get_session_store(request)
     return (
@@ -1176,14 +1185,14 @@ with gr.Blocks(title=APP_TITLE) as demo:
 
     demo.queue(default_concurrency_limit=8)
 
+    demo.load(handle_startup_load, outputs=chatbot)
+
 if __name__ == "__main__":
     favicon = "assets/favicon.ico" if os.path.exists("assets/favicon.ico") else None
-    port = int(os.environ.get("PORT", 7860))
+    port = int(os.environ.get("PORT", 8080))
+
     demo.launch(
         server_name="0.0.0.0",
         server_port=port,
         favicon_path=favicon,
-        share=False,
-        theme=gr.themes.Base(),
-        css=css,
     )
