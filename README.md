@@ -19,14 +19,16 @@ ArcMotivate is a high-performance career simulator that bridges the gap between 
 - **Frontend**: Gradio-based SPA with custom retro/cyberpunk styling.
 - **State Engine**: Thread-safe session management for background identity generation.
 
-### ☁️ Cloud Run Deployment
+### ☁️ Secure Cloud Run Deployment
 
 1.  **Connect Repo**: Point your Cloud Run service to this repository.
-2.  **Env Vars**: In the Google Cloud Console (Cloud Run -> Edit & Deploy New Revision), add:
-    *   `GOOGLE_API_KEY`: Your Gemini API Key.
-    *   `PORT`: `8080` (Standard for Cloud Run, handled automatically by `app.py`).
-3.  **Deploy**: The included `Dockerfile` and `cloudbuild.yaml` handle the rest.
+2.  **Secret Manager Setup**:
+    *   Create a secret named `gemini-api-key` in [Google Secret Manager](https://console.cloud.google.com/security/secret-manager).
+    *   Add your Gemini API Key as the secret value.
+    *   Grant the **Secret Manager Secret Accessor** role to your Cloud Run service account (usually `PROJECT_NUMBER-compute@developer.gserviceaccount.com`).
+3.  **Deploy**: The included `cloudbuild.yaml` automatically maps the secret to `GOOGLE_API_KEY`.
 
+---
 ## Spin-Up Instructions
 
 ### 1. Prerequisites
