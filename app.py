@@ -65,13 +65,13 @@ css = """
   --text:#f8fafc;--text-soft:#dbe7f3;--text-dim:#9fb0c4;
   --cyan:#22d3ee;--pink:#ff4de3;--violet:#7c3aed;
   --border-cyan:rgba(34,211,238,.2);
-  --radius-md:14px;--radius-lg:18px;
-  --shadow-1:0 6px 18px rgba(0,0,0,.24);--shadow-2:0 10px 24px rgba(0,0,0,.34);
-  --glow-soft:0 0 0 1px rgba(34,211,238,.08),0 0 24px rgba(34,211,238,.08);
+  --radius-md:10px;--radius-lg:12px;
+  --shadow-1:0 4px 12px rgba(0,0,0,.2);--shadow-2:0 8px 20px rgba(0,0,0,.3);
+  --glow-soft:0 0 0 1px rgba(34,211,238,.08),0 0 16px rgba(34,211,238,.06);
   --font-ui:'Inter',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   --font-display:'Press Start 2P',cursive;
   --font-accent:'Orbitron',sans-serif;
-  --control-h:52px;--container-w:1400px;
+  --control-h:44px;--container-w:1300px;
 }
 
 *,*::before,*::after{box-sizing:border-box}
@@ -79,29 +79,29 @@ html,body{min-height:100%}
 body,.gradio-container{
   margin:0!important;padding:0!important;color:var(--text)!important;font-family:var(--font-ui)!important;
   background:
-    radial-gradient(circle at 12% 18%,rgba(255,77,227,.08),transparent 18%),
-    radial-gradient(circle at 86% 22%,rgba(34,211,238,.08),transparent 18%),
+    radial-gradient(circle at 12% 18%,rgba(255,77,227,.06),transparent 18%),
+    radial-gradient(circle at 86% 22%,rgba(34,211,238,.06),transparent 18%),
     radial-gradient(ellipse at 20% 40%,var(--bg-2) 0%,var(--bg-1) 58%,#000 100%)!important
 }
-.gradio-container{max-width:var(--container-w)!important;margin:0 auto!important;padding:16px 14px 20px!important;border:none!important}
+.gradio-container{max-width:var(--container-w)!important;margin:0 auto!important;padding:12px 10px 16px!important;border:none!important}
 
-.arc-header{text-align:center;padding:10px 12px 14px}
+.arc-header{text-align:center;padding:4px 8px 8px}
 .arc-logo{
-  font-family:var(--font-display);font-size:clamp(1.35rem,2.2vw,2.2rem);line-height:1.35;letter-spacing:1px;
-  color:var(--pink);text-shadow:0 0 6px rgba(255,77,227,.42),0 0 14px rgba(34,211,238,.14);padding-bottom:8px
+  font-family:var(--font-display);font-size:clamp(1.1rem,1.8vw,1.6rem);line-height:1.2;letter-spacing:1px;
+  color:var(--pink);text-shadow:0 0 6px rgba(255,77,227,.4),0 0 12px rgba(34,211,238,.1);padding-bottom:4px
 }
 .arc-tagline{
-  font-size:clamp(1rem,1.4vw,1.3rem);letter-spacing:1.5px;text-transform:uppercase;color:var(--cyan);opacity:.92
+  font-size:clamp(0.8rem,1vw,0.9rem);letter-spacing:1px;text-transform:uppercase;color:var(--cyan);opacity:.9
 }
-.arc-status-wrap{display:flex;justify-content:center;margin-top:10px}
+.arc-status-wrap{display:flex;justify-content:center;margin-top:8px}
 .arc-status{
-  display:inline-flex;align-items:center;gap:10px;min-height:38px;padding:8px 14px;border-radius:999px;
+  display:inline-flex;align-items:center;gap:8px;min-height:28px;padding:4px 12px;border-radius:999px;
   background:rgba(12,10,30,.6);border:1px solid rgba(34,211,238,.18);box-shadow:var(--glow-soft);
-  color:var(--text-soft);font-size:.95rem
+  color:var(--text-soft);font-size:.8rem;font-weight:500;
 }
 .arc-status-dot{
-  width:10px;height:10px;flex:0 0 auto;border-radius:999px;background:var(--cyan);
-  box-shadow:0 0 10px rgba(34,211,238,.7)
+  width:8px;height:8px;flex:0 0 auto;border-radius:999px;background:var(--cyan);
+  box-shadow:0 0 8px rgba(34,211,238,.7)
 }
 .arc-status.is-busy .arc-status-dot{background:var(--pink)}
 
@@ -114,28 +114,28 @@ body,.gradio-container{
 .gradio-chatbot,.gradio-chatbot>div,.gradio-chatbot .panel{
   background:transparent!important;border:none!important;box-shadow:none!important
 }
-.gradio-chatbot{padding:10px!important}
+.gradio-chatbot{padding:8px!important}
 .gradio-chatbot .message{
-  width:fit-content!important;max-width:min(84%,820px)!important;
-  margin-bottom:10px!important;padding:14px 16px!important;border-radius:16px!important;box-shadow:var(--shadow-1)!important
+  width:fit-content!important;max-width:min(88%,820px)!important;
+  margin-bottom:8px!important;padding:10px 14px!important;border-radius:12px!important;box-shadow:var(--shadow-1)!important
 }
 .gradio-chatbot .message.bot{
-  margin-left:6px!important;margin-right:auto!important;background:rgba(34,211,238,.09)!important;
-  border:1px solid rgba(34,211,238,.18)!important;border-bottom-left-radius:6px!important
+  margin-left:4px!important;margin-right:auto!important;background:rgba(34,211,238,.08)!important;
+  border:1px solid rgba(34,211,238,.15)!important;border-bottom-left-radius:4px!important
 }
 .gradio-chatbot .message.user{
-  margin-left:auto!important;margin-right:6px!important;background:rgba(124,58,237,.13)!important;
-  border:1px solid rgba(124,58,237,.2)!important;border-bottom-right-radius:6px!important
+  margin-left:auto!important;margin-right:4px!important;background:rgba(124,58,237,.12)!important;
+  border:1px solid rgba(124,58,237,.18)!important;border-bottom-right-radius:4px!important
 }
 .gradio-chatbot .avatar-container,.gradio-chatbot .message-role{display:none!important}
 .gradio-chatbot .prose,.gradio-chatbot .message *{font-family:var(--font-ui)!important}
 .gradio-chatbot .prose{
-  color:var(--text)!important;font-size:clamp(1rem,1.05vw,1.12rem)!important;line-height:1.65!important;
+  color:var(--text)!important;font-size:clamp(0.9rem,0.95vw,0.95rem)!important;line-height:1.5!important;
   overflow-wrap:anywhere!important;word-break:break-word!important
 }
 
 .chat-input-shell{
-  margin-top:12px;padding:10px;background:linear-gradient(180deg,rgba(14,8,34,.94),rgba(10,5,24,.93))!important;
+  margin-top:8px;padding:8px;background:linear-gradient(180deg,rgba(14,8,34,.94),rgba(10,5,24,.93))!important;
   border:1px solid var(--border-cyan)!important;border-radius:var(--radius-md)!important
 }
 .chat-input-shell .gradio-multimodaltextbox,
@@ -145,27 +145,26 @@ body,.gradio-container{
   background:transparent!important;border:none!important;box-shadow:none!important
 }
 .chat-input-shell textarea{
-  min-height:var(--control-h)!important;max-height:180px!important;padding:12px 14px!important;
-  font-family:var(--font-ui)!important;font-size:1rem!important;line-height:1.45!important;font-weight:500!important;
+  min-height:var(--control-h)!important;max-height:140px!important;padding:10px 12px!important;
+  font-family:var(--font-ui)!important;font-size:0.95rem!important;line-height:1.4!important;font-weight:500!important;
   background:var(--surface)!important;color:var(--text)!important;border:1px solid rgba(34,211,238,.2)!important;
-  border-radius:12px!important;resize:vertical!important
+  border-radius:8px!important;resize:vertical!important
 }
 .chat-input-hint{
-  margin-top:8px;color:var(--text-dim);font:.88rem/1.4 var(--font-ui);text-align:center
+  margin-top:6px;color:var(--text-dim);font:.8rem/1.4 var(--font-ui);text-align:center
 }
 
-.canvas-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;padding:12px 0}
+.canvas-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;padding:8px 0}
 .canvas-tile{
   overflow:hidden;
   background:rgba(15,10,46,.8);
   border:1px solid rgba(139,92,246,.18);
-  border-radius:14px;
+  border-radius:10px;
   position:relative;
   box-shadow:
-    0 10px 24px rgba(0,0,0,.34),
-    0 0 0 1px rgba(34,211,238,.10),
-    0 0 24px rgba(34,211,238,.10),
-    0 0 44px rgba(124,58,237,.08);
+    0 6px 16px rgba(0,0,0,.25),
+    0 0 0 1px rgba(34,211,238,.08),
+    0 0 16px rgba(34,211,238,.08);
 }
 .canvas-tile::after{
   content:"";
@@ -175,83 +174,109 @@ body,.gradio-container{
   background:linear-gradient(180deg,rgba(255,255,255,.03),transparent 28%);
 }
 .tile-img,.tile-img-placeholder{
-  width:100%;height:118px;border-bottom:1px solid rgba(34,211,238,.12)
+  width:100%;height:90px;border-bottom:1px solid rgba(34,211,238,.12)
 }
 .tile-img{display:block;object-fit:cover}
 .tile-img-placeholder{
   display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#1e1b4b,#0f0a2e);
-  color:#7c3aed;font-size:1.45rem
+  color:#7c3aed;font-size:1.2rem
 }
-.tile-body{padding:12px}
+.tile-body{padding:10px}
 .tile-category{
-  margin-bottom:5px;color:#c084fc;font:700 .72rem/1 var(--font-accent);letter-spacing:.1em;text-transform:uppercase
+  margin-bottom:4px;color:#c084fc;font:700 .65rem/1 var(--font-accent);letter-spacing:.08em;text-transform:uppercase
 }
-.tile-title{margin:0 0 6px;color:#f0f4ff;font:700 1rem/1.35 var(--font-ui)}
-.tile-desc{color:var(--text-soft);font:400 .95rem/1.5 var(--font-ui)}
-.tile-skill-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.tile-title{margin:0 0 4px;color:#f0f4ff;font:600 0.9rem/1.3 var(--font-ui)}
+.tile-desc{color:var(--text-soft);font:400 .85rem/1.4 var(--font-ui)}
+.tile-skill-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .tile-skill-tag{
-  display:inline-block;padding:3px 8px;border-radius:6px;
+  display:inline-block;padding:2px 6px;border-radius:4px;
   background:rgba(139,92,246,.1);color:var(--cyan);
-  font:600 .72rem/1.1 var(--font-accent);letter-spacing:.02em;
+  font:600 .65rem/1.1 var(--font-accent);letter-spacing:.02em;
   border:1px solid rgba(34,211,238,.08)
 }
 .tile-links{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .tile-link{
-  display:inline-block;padding:5px 9px;border-radius:999px;background:rgba(34,211,238,.08);color:var(--cyan);
-  text-decoration:none;font-size:.9rem;border:1px solid rgba(34,211,238,.12)
+  display:inline-block;padding:4px 8px;border-radius:999px;background:rgba(34,211,238,.08);color:var(--cyan);
+  text-decoration:none;font-size:.8rem;border:1px solid rgba(34,211,238,.12)
 }
 
 .canvas-empty{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;margin-top:14px;padding:42px 18px;
-  text-align:center;color:#64748b;border:1px dashed rgba(139,92,246,.18);border-radius:14px;background:rgba(255,255,255,.012)
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;margin-top:10px;padding:32px 16px;
+  text-align:center;color:#64748b;border:1px dashed rgba(139,92,246,.18);border-radius:10px;background:rgba(255,255,255,.01)
 }
-.canvas-empty-icon{font-size:2.4rem;opacity:.35}
-.canvas-empty-text{max-width:280px;font-size:1rem;line-height:1.35;color:#7b8ba3}
-.synth-spinner{padding:16px;text-align:center;color:#a78bfa;font-size:1rem;font-style:italic}
+.canvas-empty-icon{font-size:2rem;opacity:.35}
+.canvas-empty-text{max-width:260px;font-size:0.9rem;line-height:1.35;color:#7b8ba3}
+.synth-spinner{padding:12px;text-align:center;color:#a78bfa;font-size:0.9rem;font-style:italic}
 
 .chat-skill-card{
-  display:flex;align-items:flex-start;gap:12px;margin:12px 0;
-  padding:14px 16px;border-radius:14px;
+  display:flex;align-items:flex-start;gap:10px;margin:8px 0;
+  padding:10px 12px;border-radius:10px;
   background:linear-gradient(135deg,rgba(139,92,246,.08),rgba(34,211,238,.06));
   border:1px solid rgba(139,92,246,.18);position:relative;overflow:hidden
 }
 .chat-skill-card::before{
-  content:'';position:absolute;top:0;left:0;width:4px;height:100%;
+  content:'';position:absolute;top:0;left:0;width:3px;height:100%;
   background:linear-gradient(180deg,var(--violet),var(--cyan))
 }
-.chat-skill-icon{font-size:1.5rem;flex-shrink:0;margin-top:2px}
+.chat-skill-icon{font-size:1.2rem;flex-shrink:0;margin-top:2px}
 .chat-skill-body{flex:1;min-width:0}
-.chat-skill-name{font:700 .92rem/1.2 var(--font-accent);color:#fff;margin-bottom:4px}
-.chat-skill-try{font:.88rem/1.35 var(--font-ui);color:var(--text-soft);margin-bottom:8px}
+.chat-skill-name{font:600 .85rem/1.2 var(--font-accent);color:#fff;margin-bottom:2px}
+.chat-skill-try{font:.85rem/1.35 var(--font-ui);color:var(--text-soft);margin-bottom:6px}
 .chat-skill-link{
-  display:inline-flex;align-items:center;gap:4px;padding:6px 12px;
-  border-radius:8px;background:rgba(139,92,246,.12);color:var(--cyan);
-  font:700 .78rem/1 var(--font-accent);letter-spacing:.03em;text-decoration:none;
+  display:inline-flex;align-items:center;gap:4px;padding:4px 10px;
+  border-radius:6px;background:rgba(139,92,246,.12);color:var(--cyan);
+  font:600 .7rem/1 var(--font-accent);letter-spacing:.03em;text-decoration:none;
   border:1px solid rgba(34,211,238,.12)
 }
 
+/* Cinematic 21:9 Aspect Ratio for Inline Visuals */
 .chat-inline-visual{
-  margin:14px 0;border-radius:12px;overflow:hidden;
-  border:1px solid rgba(34,211,238,.16);box-shadow:var(--glow-soft)
+  margin:8px 0;
+  border-radius:8px;
+  overflow:hidden;
+  border:1px solid rgba(34,211,238,.16);
+  box-shadow:var(--glow-soft);
+  width: 100%;
+  aspect-ratio: 21 / 9;
+  background: rgba(15,10,46,.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.chat-inline-visual img{display:block;width:100%;max-height:160px;object-fit:cover}
+.chat-inline-visual img{
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+.chat-inline-visual.loading {
+  color: var(--cyan);
+  font-size: 0.85rem;
+  font-style: italic;
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0% { opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { opacity: 0.5; }
+}
 
 .chat-comic-grid{
-  display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:12px
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:6px;margin-top:8px
 }
 .chat-comic-grid img{
-  display:block;width:100%;height:100px;object-fit:cover;border:1px solid rgba(34,211,238,.16);border-radius:8px
+  display:block;width:100%;height:80px;object-fit:cover;border:1px solid rgba(34,211,238,.16);border-radius:6px
 }
 
 .story-card{
-  padding:24px;border-radius:18px;
+  padding:16px;border-radius:12px;
   background:linear-gradient(145deg,rgba(15,10,30,.95),rgba(20,15,40,.9));
   border:1px solid rgba(139,92,246,.14)
 }
 .story-card-title{
-  font:800 1.3rem/1.2 var(--font-accent);
+  font:700 1.1rem/1.2 var(--font-accent);
   color: var(--cyan);
-  margin-bottom:18px;
+  margin-bottom:14px;
 }
 @supports (-webkit-background-clip:text) {
   .story-card-title{
@@ -261,62 +286,61 @@ body,.gradio-container{
   }
 }
 
-.story-section{margin-bottom:20px}
-.story-section-label{font:700 .78rem/1 var(--font-accent);color:var(--cyan);letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px}
-.story-narrative{font:.95rem/1.6 var(--font-ui);color:var(--text-soft)}
+.story-section{margin-bottom:16px}
+.story-section-label{font:600 .7rem/1 var(--font-accent);color:var(--cyan);letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px}
+.story-narrative{font:.9rem/1.5 var(--font-ui);color:var(--text-soft)}
 .story-avatar{
-  width:120px;height:120px;border-radius:50%;object-fit:cover;
+  width:90px;height:90px;border-radius:50%;object-fit:cover;
   border:2px solid rgba(139,92,246,.3);margin:0 auto;display:block
 }
-.story-comic-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:8px}
+.story-comic-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px}
 .story-comic-panel{
-  border-radius:12px;overflow:hidden;background:rgba(255,255,255,.02);
+  border-radius:8px;overflow:hidden;background:rgba(255,255,255,.02);
   border:1px solid rgba(34,211,238,.1)
 }
-.story-comic-panel img{display:block;width:100%;height:100px;object-fit:cover}
-.story-comic-caption{padding:8px 10px;font:.82rem/1.3 var(--font-ui);color:var(--text-soft);text-align:center}
+.story-comic-panel img{display:block;width:100%;height:80px;object-fit:cover}
+.story-comic-caption{padding:6px 8px;font:.75rem/1.3 var(--font-ui);color:var(--text-soft);text-align:center}
 .story-postcard{
-  padding:18px;border-radius:14px;
+  padding:14px;border-radius:10px;
   background:linear-gradient(135deg,rgba(139,92,246,.08),rgba(34,211,238,.05));
   border:1px solid rgba(139,92,246,.12);text-align:center
 }
-.story-postcard img{display:block;width:100%;max-height:160px;object-fit:cover;border-radius:10px;margin-bottom:10px}
-.story-postcard-caption{font:600 .95rem/1.4 var(--font-ui);color:#fff}
+.story-postcard img{display:block;width:100%;max-height:120px;object-fit:cover;border-radius:8px;margin-bottom:8px}
+.story-postcard-caption{font:500 .85rem/1.4 var(--font-ui);color:#fff}
 .story-nudge{
-  padding:12px 16px;border-radius:12px;
+  padding:10px 12px;border-radius:8px;
   background:linear-gradient(135deg,rgba(34,211,238,.06),rgba(139,92,246,.04));
   border:1px solid rgba(34,211,238,.1);
-  font:.9rem/1.5 var(--font-ui);color:var(--text-soft)
+  font:.85rem/1.4 var(--font-ui);color:var(--text-soft)
 }
 .story-nudge strong{color:var(--cyan)}
 .identity-note{
-  margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.03);
-  border:1px solid rgba(255,255,255,.05);color:var(--text-soft);font:.92rem/1.5 var(--font-ui)
+  margin-top:8px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.03);
+  border:1px solid rgba(255,255,255,.05);color:var(--text-soft);font:.85rem/1.4 var(--font-ui)
 }
 
 @media (max-width:768px){
-  .gradio-container{padding:6px 4px 12px!important}
-  .arc-header{padding:4px 6px 8px}
-  .arc-logo{font-size:1.4rem; padding-bottom:4px}
-  .arc-tagline{font-size:0.8rem; letter-spacing:1px}
-  .gradio-chatbot{padding:6px!important}
+  .gradio-container{padding:4px 2px 8px!important}
+  .arc-header{padding:2px 4px 6px}
+  .arc-logo{font-size:1.2rem; padding-bottom:2px}
+  .arc-tagline{font-size:0.7rem; letter-spacing:0.5px}
+  .gradio-chatbot{padding:4px!important}
   .gradio-chatbot .message{
-    max-width:92%!important;
-    padding:10px 12px!important;
-    margin-bottom:8px!important;
+    max-width:94%!important;
+    padding:8px 10px!important;
+    margin-bottom:6px!important;
   }
-  .gradio-chatbot .prose{font-size:0.95rem!important; line-height:1.5!important}
-  .canvas-grid, .story-comic-strip{grid-template-columns:1fr; gap:10px}
-  .chat-input-shell{margin-top:8px; padding:6px}
+  .gradio-chatbot .prose{font-size:0.9rem!important; line-height:1.4!important}
+  .canvas-grid, .story-comic-strip{grid-template-columns:1fr; gap:8px}
+  .chat-input-shell{margin-top:6px; padding:4px}
   .chat-input-shell textarea{
-    min-height:44px!important;
-    font-size:16px!important;
-    padding:10px 12px!important;
+    min-height:40px!important;
+    font-size:16px!important; /* 16px prevents iOS zoom */
+    padding:8px 10px!important;
   }
-  .chat-input-hint{font-size:0.75rem; margin-top:4px}
-  .chat-inline-visual img{max-height:100px}
-  .story-avatar{width:90px; height:90px}
-  .tab-nav button { padding: 8px 10px!important; font-size: 0.9rem!important; }
+  .chat-input-hint{font-size:0.7rem; margin-top:4px}
+  .story-avatar{width:70px; height:70px}
+  .tab-nav button { padding: 6px 8px!important; font-size: 0.85rem!important; }
 }
 """
 
@@ -394,9 +418,8 @@ def extract_text(content: Any) -> str:
                 texts.append(str(part["text"]))
             elif isinstance(part, str):
                 texts.append(part)
-        return " ".join(texts).strip()
+        return " ".join(texts).strip()  # <--- Fixed!
     return str(content or "").strip()
-
 
 def _extract_file_path(file_obj: Any) -> Optional[str]:
     if file_obj is None:
@@ -574,16 +597,21 @@ def format_skill_card(name: str, url: str, try_this: str) -> str:
         f"</div>"
     )
 
-def format_inline_visual_html(image_b64: str, align: str = "left") -> str:
+def format_inline_visual_html(image_b64: str) -> str:
     safe_b64 = html.escape(image_b64, quote=True)
-    align_class = "chat-inline-visual-left" if align == "left" else "chat-inline-visual-right"
     return (
-        f"<div class='chat-inline-visual {align_class}'>"
+        f"<div class='chat-inline-visual'>"
         f"<img src='data:image/png;base64,{safe_b64}' alt='visual metaphor'>"
         f"</div>"
     )
 
-def render_interleaved_content(raw_text: str, enable_visuals: bool = True) -> str:
+def render_interleaved_content(raw_text: str, visual_state: str = "rendered") -> str:
+    """
+    visual_state can be:
+    - "hidden": Strips the visual tags entirely.
+    - "loading": Replaces the tag with a glowing placeholder box.
+    - "rendered": Blocks to generate the image and replaces the tag with the final image.
+    """
     parts: List[str] =[]
     remainder = raw_text
     visuals_used = 0
@@ -612,12 +640,16 @@ def render_interleaved_content(raw_text: str, enable_visuals: bool = True) -> st
 
         if earliest is vis_m:
             prompt = vis_m.group(1).strip()
-            if enable_visuals and visuals_used < MAX_INLINE_VISUAL_MARKERS:
-                img_b64 = maybe_generate_inline_visual(prompt)
-                if img_b64:
-                    align = "left" if visuals_used % 2 == 0 else "right"
-                    parts.append(format_inline_visual_html(img_b64, align=align))
-                    visuals_used += 1
+            if visual_state != "hidden" and visuals_used < MAX_INLINE_VISUAL_MARKERS:
+                if visual_state == "loading":
+                    parts.append("<div class='chat-inline-visual loading'>🎨 <em>Visualizing...</em></div>")
+                elif visual_state == "rendered":
+                    img_b64 = maybe_generate_inline_visual(prompt)
+                    if img_b64:
+                        parts.append(format_inline_visual_html(img_b64))
+                    else:
+                        parts.append("<div class='chat-inline-visual loading' style='color:#ef4444'>⚠️ Visual failed</div>")
+                visuals_used += 1
             remainder = remainder[vis_m.end():]
 
         elif earliest is skill_m:
@@ -680,7 +712,7 @@ def get_rendered_opening_message() -> str:
             logger.info("Generating new intro message via LLM...")
             raw_msg = generate_intro_message()
             if raw_msg:
-                rendered_msg = render_interleaved_content(raw_msg, enable_visuals=True)
+                rendered_msg = render_interleaved_content(raw_msg, visual_state="rendered")
                 with open(TMP_INTRO_FILE, "w", encoding="utf-8") as f:
                     f.write(rendered_msg)
                 if GCS_AVAILABLE and CACHE_BUCKET_NAME:
@@ -698,7 +730,7 @@ def get_rendered_opening_message() -> str:
         except Exception:
             logger.exception("Failed to generate opening message")
             
-    return render_interleaved_content(FALLBACK_OPENING_MSG, enable_visuals=True)
+    return render_interleaved_content(FALLBACK_OPENING_MSG, visual_state="rendered")
 
 
 def get_header_status_html(store: Dict[str, Any], busy: bool = False, stage: str = "") -> str:
@@ -1215,9 +1247,9 @@ def run_turn(
             now = time.monotonic()
             if (now - last_ui_flush) >= STREAM_UPDATE_INTERVAL_SEC:
                 preview = display_text or "🧠 *Thinking...*"
-                preview = _RE_VISUALIZE.sub("🎨 *generating visual…*", preview)
-                preview = _RE_SKILL.sub("🎯 *loading skill…*", preview)
-                history[-1]["content"] = preview
+                # Use loading state for visuals during stream
+                preview_html = render_interleaved_content(preview, visual_state="loading")
+                history[-1]["content"] = preview_html
                 yield (
                     gr.update(interactive=False),
                     history,
@@ -1236,11 +1268,26 @@ def run_turn(
     if not final_text:
         final_text = "…"
 
-    interleaved_html = render_interleaved_content(final_text, enable_visuals=True)
+    # 1. Yield final text with a loading visual placeholder (Non-blocking UX)
+    interleaved_html_loading = render_interleaved_content(final_text, visual_state="loading")
     if inline_images:
-        interleaved_html += "\n\n" + format_inline_images(inline_images)
+        interleaved_html_loading += "\n\n" + format_inline_images(inline_images)
 
-    history[-1]["content"] = interleaved_html
+    history[-1]["content"] = interleaved_html_loading
+    yield (
+        gr.update(interactive=True), # Let user type while image generates!
+        history,
+        format_canvas(store),
+        render_identity_lab(store),
+        get_header_status_html(store, busy=True, stage="Painting visual..."),
+    )
+
+    # 2. Generate image synchronously (blocks this generator, but UI is interactive)
+    interleaved_html_final = render_interleaved_content(final_text, visual_state="rendered")
+    if inline_images:
+        interleaved_html_final += "\n\n" + format_inline_images(inline_images)
+
+    history[-1]["content"] = interleaved_html_final
 
     jobs = plan_artifacts(store)
     enqueue_artifact_jobs(store, jobs, history, latest_user_input)
