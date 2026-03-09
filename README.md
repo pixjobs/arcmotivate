@@ -17,52 +17,70 @@ Each user is free to generate their own storybook of their future by exploring n
     - **Future Postcard**: A forward-looking visual and message from your "future self".
 - **Silent UX**: Focused, distraction-free interface optimized for performance.
 
-## Tech Stack
+## 🛠️ Tech Stack & Architecture
 
-- **Large Language Models**: Powered by the Gemini Flash family for low-latency reasoning and image generation.
-- **Frontend**: Gradio-based SPA with custom retro/cyberpunk styling.
-- **State Engine**: Thread-safe session management for background identity generation.
-
-### ☁️ Secure Cloud Run Deployment
-
-1.  **Connect Repo**: Point your Cloud Run service to this repository.
-2.  **Secret Manager Setup**:
-    *   Create a secret named `gemini-api-key` in [Google Secret Manager](https://console.cloud.google.com/security/secret-manager).
-    *   Add your Gemini API Key as the secret value.
-    *   Grant the **Secret Manager Secret Accessor** role to your Cloud Run service account (`cloud-run-sa@...`).
-    *   **Crucial**: Grant the **Service Account User** role to the Cloud Build service account (`[PROJECT_NUMBER]@cloudbuild.gserviceaccount.com`) on the Cloud Run service account to allow the deploy to finish.
-    *   **Manual Mapping**: If the build succeeds but the app fails to start, go to **Cloud Run > Edit & Deploy New Revision > Variables & Secrets** and manually map the `gemini-api-key` secret to the `GOOGLE_API_KEY` environment variable.
-3.  **Deploy**: The included `cloudbuild.yaml` automatically maps the secret to `GOOGLE_API_KEY`.
-    *   *Note*: If the build fails initially, ensure the `gemini-api-key` secret actually exists in Secret Manager.
+- **Large Language Models**: Powered by the Gemini Flash family for low-latency reasoning, dynamic narrative generation, and pixel-art image synthesis.
+- **Frontend**: Mobile-optimized, responsive Gradio SPA (Single Page Application) featuring custom retro/cyberpunk CSS styling, touch-friendly inputs, and dynamic viewport scaling.
+- **State Engine**: Thread-safe session management for background identity generation and asynchronous artifact rendering.
+- **Zero-Latency Caching (Cloud Run Optimized)**: Implements a custom 3-Tier Waterfall Cache (RAM → Local `/tmp` Disk → Google Cloud Storage Blob) to completely eliminate serverless cold-start latency and redundant API costs for global assets.
 
 ---
-## Spin-Up Instructions
+
+## ☁️ Secure Cloud Run Deployment
+
+To deploy this in a production serverless environment, follow these steps:
+
+### 1. Connect Repository
+Point your Google Cloud Run service to this repository for continuous deployment.
+
+### 2. Secret Manager Setup (API Keys)
+*   Create a secret named `gemini-api-key` in [Google Secret Manager](https://console.cloud.google.com/security/secret-manager).
+*   Add your Gemini API Key as the secret value.
+*   Grant the **Secret Manager Secret Accessor** role to your Cloud Run service account.
+*   **Crucial**: Grant the **Service Account User** role to the Cloud Build service account (`[PROJECT_NUMBER]@cloudbuild.gserviceaccount.com`) on the Cloud Run service account to allow the deploy to finish.
+*   *Note:* The included `cloudbuild.yaml` automatically maps this secret to the `GOOGLE_API_KEY` environment variable. If it fails, you can manually map it in the Cloud Run UI under **Variables & Secrets**.
+
+### 3. Cloud Storage Setup (Cross-Container Caching)
+To enable the zero-latency 3-tier cache across ephemeral containers:
+*   Create a **Private** standard Google Cloud Storage bucket (e.g., `arc-motivate-cache`). Keep "Enforce public access prevention" **checked**.
+*   Go to the bucket's **Permissions** tab and grant the **Storage Object Admin** role to your Cloud Run Service Account.
+*   In your Cloud Run service settings, add a standard Environment Variable:
+    *   `CACHE_BUCKET_NAME` = `your-bucket-name`
+
+---
+
+## 🚀 Local Spin-Up Instructions
 
 ### 1. Prerequisites
 - Python 3.10+
 - A Google Gemini API Key
+- *(Optional)* A Google Cloud Storage bucket for testing the blob cache.
 
 ### 2. Setup
 ```bash
 # Clone the repository
+git clone https://github.com/your-repo/arcmotivate.git
 cd arcmotivate
 
 # Create and activate virtual environment
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
-```
 
-### 3. Configuration
-Create a `.env` file in the root directory:
-```env
-GOOGLE_API_KEY="your_api_key_here"
-```
+. Configuration
+Create a .env file in the root directory:
 
-### 4. Run
-```bash
+# Required
+GOOGLE_API_KEY="your_gemini_api_key_here"
+
+# Optional (Enables the 3-Tier GCS Cache)
+CACHE_BUCKET_NAME="your-gcs-bucket-name"
+
+4. Run
+
 python app.py
-```
-The interface will be available at `http://localhost:7860`.
+
+The interface will be available at http://localhost:7860.
+(Note: On the very first load, the app will take a few seconds to generate the intro message and image. Subsequent loads and refreshes will be instant as it reads from the local /tmp cache or GCS bucket).

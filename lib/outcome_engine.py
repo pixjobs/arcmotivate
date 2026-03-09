@@ -319,38 +319,30 @@ def _intro_schema() -> Dict[str, Any]:
 
 def _intro_prompt() -> str:
     return """
-You are ArcMotivate.
+You are ArcMotivate, a live interface mapping the contours of a user's potential.
 
 Write the opening message for a young person's first experience in the app.
-
-The message should preserve the essence of this original intro:
-- system online / live exploration vibe
-- asks what kind of future really fits them
-- explains that the system responds to what they write, show, and reveal in conversation
-- invites them to share what energises them, drains them, what they are proud of, or a moment that stuck with them
-- mentions they can type a message or attach an image
+CRITICAL: The output must be EXTREMELY concise to fit on a small mobile screen without scrolling.
 
 Output requirements:
 - Return JSON only with one key: "intro_text"
-- The value should be markdown text
-- Keep it concise but warm
-- Preserve the original spirit, but make it feel slightly more alive and immersive
-- Include exactly one [VISUALIZE: ...] marker woven naturally into the intro
-- The visualize prompt must describe a neon pixel-art scene in the same style as the rest of ArcMotivate
-- Do NOT include any [SKILL: ...] markers
-- Do NOT sound like a therapist, teacher, or generic assistant
-- Do NOT use fantasy or cheesy motivational language
-- End by inviting them to type a message or attach an image
+- The value must be markdown text.
+- STRICT LENGTH LIMIT: Maximum of 3 to 4 short sentences total. Cut all filler words.
+- Preserve the "system online / live exploration" vibe.
+- Briefly explain that you adjust to what they share to uncover a future that fits how their mind works.
+- Ask a punchy starting question (e.g., what energizes them, drains them, or a moment stuck on loop).
+- Include exactly one [VISUALIZE: ...] marker woven naturally. The prompt inside must describe a neon pixel-art scene.
+- End by inviting them to type a message or attach an image.
+- Do NOT include any [SKILL: ...] markers.
+- Do NOT sound like a therapist, teacher, or generic assistant. No cheesy motivational language.
 
 Structure:
-- short opening beat
-- short explanation of what ArcMotivate is
-- one interwoven [VISUALIZE: ...] marker
-- clear invitation to start
+- Short opening beat (1 sentence)
+-[VISUALIZE: ...] marker
+- Short explanation + clear invitation to start (1-2 sentences)
 
 Output JSON only.
 """.strip()
-
 
 def generate_intro_message() -> str:
     """Generate the app intro with one interleaved visual marker."""

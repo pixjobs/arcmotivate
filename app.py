@@ -39,14 +39,11 @@ APP_TITLE = "ArcMotivate"
 
 FALLBACK_OPENING_MSG = (
     "👾 **System Online — ArcMotivate**\n\n"
-    "Have you ever wondered what kind of future really fits you?\n\n"
-    "ArcMotivate is a live exploration agent. I can respond to what you write, what you show me, "
-    "and the patterns that emerge as we talk.\n\n"
-    "[VISUALIZE: A neon pixel-art control room waking up, with glowing screens, an open sketchbook, "
-    "tools, music notes, code fragments, and pathways branching into different futures]\n\n"
-    "Before we build your workspace, tell me a little about you. What energises you? What drains you? "
-    "What’s something you’re proud of, or a moment that has stuck with you?\n\n"
-    "You can type a message or attach an image, and we’ll explore it together."
+    "I'm a live interface mapping the contours of your potential. "
+    "I adjust to what you share, showing you reflections of your own patterns.\n\n"
+    "[VISUALIZE: A neon pixel-art control room waking up, glowing screens, pathways branching into different futures]\n\n"
+    "Tell me: what energizes you? What drains your battery? Or share a moment that's stuck on loop in your head.\n\n"
+    "*Type a message or attach an image to begin.*"
 )
 
 STREAM_UPDATE_INTERVAL_SEC = 0.05
@@ -234,7 +231,8 @@ body,.gradio-container{
   margin:14px 0;border-radius:12px;overflow:hidden;
   border:1px solid rgba(34,211,238,.16);box-shadow:var(--glow-soft)
 }
-.chat-inline-visual img{display:block;width:100%;max-height:220px;object-fit:cover}
+
+.chat-inline-visual img{display:block;width:100%;max-height:160px;object-fit:cover}
 
 .chat-comic-grid{
   display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:12px
@@ -314,7 +312,7 @@ body,.gradio-container{
     padding:10px 12px!important;
   }
   .chat-input-hint{font-size:0.75rem; margin-top:4px}
-  .chat-inline-visual img{max-height:160px}
+  .chat-inline-visual img{max-height:100px}
   .story-avatar{width:90px; height:90px}
 }
 """
