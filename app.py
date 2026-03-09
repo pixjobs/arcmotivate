@@ -12,6 +12,13 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 import gradio as gr
 from dotenv import load_dotenv
 
+# Optional import for Google Cloud Storage (Blob caching)
+try:
+    from google.cloud import storage
+    GCS_AVAILABLE = True
+except ImportError:
+    GCS_AVAILABLE = False
+
 from lib.psychology_codex import map_narrative_to_superpowers
 from lib.coaching_agent import generate_socratic_stream
 from lib.outcome_engine import generate_intro_message, synthesize_single_tile
@@ -288,36 +295,25 @@ body,.gradio-container{
 }
 
 @media (max-width:768px){
-  /* 1. Reclaim screen real estate by reducing container padding */
   .gradio-container{padding:6px 4px 12px!important}
-  
-  /* 2. Shrink the header slightly to keep the chat visible */
   .arc-header{padding:4px 6px 8px}
   .arc-logo{font-size:1.4rem; padding-bottom:4px}
   .arc-tagline{font-size:0.8rem; letter-spacing:1px}
-  
-  /* 3. Make chat bubbles wider on mobile and reduce padding */
   .gradio-chatbot{padding:6px!important}
   .gradio-chatbot .message{
-    max-width:92%!important; /* Use more horizontal space */
+    max-width:92%!important;
     padding:10px 12px!important;
     margin-bottom:8px!important;
   }
   .gradio-chatbot .prose{font-size:0.95rem!important; line-height:1.5!important}
-  
-  /* 4. Stack grids into single columns */
   .canvas-grid, .story-comic-strip{grid-template-columns:1fr; gap:10px}
-  
-  /* 5. Optimize the input shell for touch targets */
   .chat-input-shell{margin-top:8px; padding:6px}
   .chat-input-shell textarea{
-    min-height:44px!important; /* Standard mobile touch target size */
-    font-size:16px!important; /* Prevents iOS Safari from auto-zooming on focus */
+    min-height:44px!important;
+    font-size:16px!important;
     padding:10px 12px!important;
   }
   .chat-input-hint{font-size:0.75rem; margin-top:4px}
-  
-  /* 6. Ensure inline visuals don't dominate the small screen */
   .chat-inline-visual img{max-height:160px}
   .story-avatar{width:90px; height:90px}
 }
@@ -562,8 +558,6 @@ def render_interleaved_content(raw_text: str, enable_visuals: bool = True) -> st
             remainder = remainder[vis_m.end():]
 
         elif earliest is skill_m:
-            # Scrap skill cards from chat if they are slowing things down.
-            # Just drop the marker and let the right-side workspace handle exploration.
             remainder = remainder[skill_m.end():]
 
         else:
@@ -573,50 +567,96 @@ def render_interleaved_content(raw_text: str, enable_visuals: bool = True) -> st
 
 
 # =====================================================================
-# DISK-BASED CACHING FOR RENDERED INTRO MESSAGE (TEXT + IMAGE)
+# MULTI-CONTAINER BLOB CACHING FOR RENDERED INTRO MESSAGE
 # =====================================================================
-RENDERED_INTRO_FILE = "/tmp/arc_intro_rendered.txt"
+CACHE_BUCKET_NAME = os.environ.get("CACHE_BUCKET_NAME")
+BLOB_FILENAME = "arc_intro_rendered.txt"
+TMP_INTRO_FILE = f"/tmp/{BLOB_FILENAME}"
+
 _intro_lock = threading.Lock()
+_MEM_CACHE_INTRO = None
 
 def get_rendered_opening_message() -> str:
     """
-    Fetches the opening message, renders the HTML (which generates the image), 
-    and caches the entire HTML string (including the base64 image) to disk.
-    This ensures all workers in a Cloud Run container share the exact same 
-    pre-generated image and text instantly.
+    Fetches the opening message using a 3-tier cache system:
+    1. RAM (Instant for this specific worker)
+    2. Local /tmp Disk (Instant for other workers in the same container)
+    3. GCS Blob (Fast sync across multiple Cloud Run containers)
+    4. Fallback to LLM/Image generation if none exist.
     """
-    # 1. Fast path: Check if any worker has already saved the rendered HTML to disk
-    if os.path.exists(RENDERED_INTRO_FILE):
+    global _MEM_CACHE_INTRO
+
+    # Tier 1: RAM Cache
+    if _MEM_CACHE_INTRO:
+        return _MEM_CACHE_INTRO
+
+    # Tier 2: Local Container Disk Cache (/tmp)
+    if os.path.exists(TMP_INTRO_FILE):
         try:
-            with open(RENDERED_INTRO_FILE, "r", encoding="utf-8") as f:
+            with open(TMP_INTRO_FILE, "r", encoding="utf-8") as f:
                 content = f.read().strip()
                 if content:
+                    _MEM_CACHE_INTRO = content
                     return content
         except Exception as e:
-            logger.warning("Failed to read rendered intro from disk: %s", e)
+            logger.warning("Failed to read intro from local /tmp: %s", e)
 
-    # 2. If not on disk, acquire a lock so multiple threads don't hit the API at the exact same time
+    # Lock to prevent multiple threads from hitting GCS or LLM simultaneously
     with _intro_lock:
-        # Double-check inside the lock in case another thread just finished writing it
-        if os.path.exists(RENDERED_INTRO_FILE):
-            with open(RENDERED_INTRO_FILE, "r", encoding="utf-8") as f:
-                return f.read().strip()
+        # Double check inside lock
+        if os.path.exists(TMP_INTRO_FILE):
+            with open(TMP_INTRO_FILE, "r", encoding="utf-8") as f:
+                _MEM_CACHE_INTRO = f.read().strip()
+                return _MEM_CACHE_INTRO
 
-        # 3. Generate the raw message via the LLM API
+        # Tier 3: Google Cloud Storage Blob Cache (Cross-Container Sync)
+        if GCS_AVAILABLE and CACHE_BUCKET_NAME:
+            try:
+                client = storage.Client()
+                bucket = client.bucket(CACHE_BUCKET_NAME)
+                blob = bucket.blob(BLOB_FILENAME)
+                
+                if blob.exists():
+                    logger.info("Downloading cached intro message from GCS Blob...")
+                    content = blob.download_as_text()
+                    
+                    # Save to local /tmp for other workers in this container
+                    with open(TMP_INTRO_FILE, "w", encoding="utf-8") as f:
+                        f.write(content)
+                        
+                    _MEM_CACHE_INTRO = content
+                    return content
+            except Exception as e:
+                logger.warning("Failed to read from GCS Blob: %s", e)
+
+        # Tier 4: Generate from scratch (LLM + Image API)
         try:
+            logger.info("Generating new intro message via LLM...")
             raw_msg = generate_intro_message()
             if raw_msg:
-                # Render it (this triggers the expensive image generation API call)
                 rendered_msg = render_interleaved_content(raw_msg, enable_visuals=True)
                 
-                # 4. Save the fully rendered HTML (with base64 image) to disk
-                with open(RENDERED_INTRO_FILE, "w", encoding="utf-8") as f:
+                # Save to local /tmp
+                with open(TMP_INTRO_FILE, "w", encoding="utf-8") as f:
                     f.write(rendered_msg)
+                    
+                # Upload to GCS Blob so other containers can use it
+                if GCS_AVAILABLE and CACHE_BUCKET_NAME:
+                    try:
+                        logger.info("Uploading newly generated intro to GCS Blob...")
+                        client = storage.Client()
+                        bucket = client.bucket(CACHE_BUCKET_NAME)
+                        blob = bucket.blob(BLOB_FILENAME)
+                        blob.upload_from_string(rendered_msg, content_type="text/html")
+                    except Exception as e:
+                        logger.warning("Failed to upload to GCS Blob: %s", e)
+
+                _MEM_CACHE_INTRO = rendered_msg
                 return rendered_msg
         except Exception:
             logger.exception("Failed to generate opening message")
             
-    # 5. If it fails, return the fallback rendered, but DON'T save it to disk.
+    # Absolute Fallback (Do not cache failures)
     return render_interleaved_content(FALLBACK_OPENING_MSG, enable_visuals=True)
 
 
@@ -849,7 +889,7 @@ def plan_artifacts(store: Dict[str, Any]) -> List[str]:
         return jobs
 
     if turn == 2:
-        jobs = ["tile", "recap"]
+        jobs =["tile", "recap"]
         if avatar_missing:
             jobs.append("avatar")
         jobs.append("comic")
@@ -927,7 +967,7 @@ def artifact_worker(store: Dict[str, Any]) -> None:
         try:
             if kind == "tile":
                 with store["lock"]:
-                    existing_tiles = deepcopy(store.get("tiles", []))
+                    existing_tiles = deepcopy(store.get("tiles",[]))
 
                 tile = synthesize_single_tile(
                     job["history_tile"],
@@ -1044,7 +1084,7 @@ def user_submit(
 
     display_content = text or "📎 [image attached]"
     history.append({"role": "user", "content": display_content})
-    return gr.update(value={"text": "", "files": []}), history
+    return gr.update(value={"text": "", "files":[]}), history
 
 
 def run_turn(
@@ -1200,10 +1240,8 @@ with gr.Blocks(title=APP_TITLE) as demo:
     header_status = gr.HTML(get_header_status_html(default_session_store()))
 
     with gr.Row(equal_height=False):
-        # Reduced min_width so it stacks perfectly on mobile without horizontal scroll
         with gr.Column(scale=6, min_width=280):
             chatbot = gr.Chatbot(
-                # Use viewport height (vh) instead of fixed pixels so it adapts to the screen size
                 height="60vh",
                 show_label=False,
                 elem_classes=["chat-wrap"],
@@ -1224,7 +1262,6 @@ with gr.Blocks(title=APP_TITLE) as demo:
                     "<strong>Shift+Enter</strong> for a new line</div>"
                 )
 
-        # Reduced min_width here as well
         with gr.Column(scale=4, min_width=280):
             with gr.Tabs():
                 with gr.TabItem("⚡ Agent Workspace"):
@@ -1241,8 +1278,7 @@ with gr.Blocks(title=APP_TITLE) as demo:
     )
 
     submit_event.then(
-        run_turn,
-        [chatbot],[msg_input, chatbot, canvas_output, identity_output, header_status],
+        run_turn,[chatbot],[msg_input, chatbot, canvas_output, identity_output, header_status],
         concurrency_limit=1,
     )
 
@@ -1260,8 +1296,6 @@ if __name__ == "__main__":
     favicon = "assets/favicon.ico" if os.path.exists("assets/favicon.ico") else None
     port = int(os.environ.get("PORT", 8080))
 
-    # Use standard Gradio environment variables for port/name
-    # server_name/server_port are defined in the Dockerfile/environment
     demo.launch(
         server_name="0.0.0.0",
         server_port=port,
