@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import html
 import logging
 import os
@@ -37,13 +39,14 @@ logger = logging.getLogger(__name__)
 
 APP_TITLE = "ArcMotivate"
 
+# Global GCS Bucket Name for all caching
+CACHE_BUCKET_NAME = os.environ.get("CACHE_BUCKET_NAME")
+
 FALLBACK_OPENING_MSG = (
     "👾 **System Online — ArcMotivate**\n\n"
-    "I'm a live interface mapping the contours of your potential. "
-    "I adjust to what you share, showing you reflections of your own patterns.\n\n"
     "[VISUALIZE: A neon pixel-art control room waking up, glowing screens, pathways branching into different futures]\n\n"
-    "Tell me: what energizes you? What drains your battery? Or share a moment that's stuck on loop in your head.\n\n"
-    "*Type a message or attach an image to begin.*"
+    "I map your input to find the future your mind demands. What moment keeps replaying in your head?\n\n"
+    "*Send a message or attach an image to begin.*"
 )
 
 STREAM_UPDATE_INTERVAL_SEC = 0.05
@@ -231,7 +234,6 @@ body,.gradio-container{
   margin:14px 0;border-radius:12px;overflow:hidden;
   border:1px solid rgba(34,211,238,.16);box-shadow:var(--glow-soft)
 }
-
 .chat-inline-visual img{display:block;width:100%;max-height:160px;object-fit:cover}
 
 .chat-comic-grid{
@@ -466,12 +468,74 @@ def extract_tool_json_and_display_text(accumulated_text: str) -> Tuple[str, Opti
     return display_text, recovered_prompt, False
 
 
+# =====================================================================
+# DISTRIBUTED GENERATIVE ASSET POOL (4-Tier Image Cache)
+# =====================================================================
 @lru_cache(maxsize=96)
 def cached_pixel_art(prompt: str) -> Optional[str]:
     prompt = (prompt or "").strip()
     if not prompt:
         return None
-    return generate_pixel_art_illustration(prompt)
+        
+    # 1. Create a unique, safe filename based on the prompt text
+    prompt_hash = hashlib.md5(prompt.lower().encode('utf-8')).hexdigest()
+    blob_filename = f"img_cache_{prompt_hash}.txt"
+    tmp_file = f"/tmp/{blob_filename}"
+
+    # 2. Tier 2 Cache: Check local container disk (/tmp)
+    if os.path.exists(tmp_file):
+        try:
+            with open(tmp_file, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                if content:
+                    logger.info(f"Image loaded from local /tmp cache! ({prompt_hash})")
+                    return content
+        except Exception as e:
+            logger.warning("Failed to read image from /tmp: %s", e)
+
+    # 3. Tier 3 Cache: Check Google Cloud Storage Blob (Cross-Container)
+    if GCS_AVAILABLE and CACHE_BUCKET_NAME:
+        try:
+            client = storage.Client()
+            bucket = client.bucket(CACHE_BUCKET_NAME)
+            blob = bucket.blob(f"images/{blob_filename}")
+            
+            if blob.exists():
+                logger.info(f"Image loaded from GCS Blob cache! ({prompt_hash})")
+                b64_data = blob.download_as_text()
+                
+                # Save to local /tmp so the next request on this container is even faster
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    f.write(b64_data)
+                return b64_data
+        except Exception as e:
+            logger.warning("Failed to read image from GCS Blob: %s", e)
+
+    # 4. Fallback: Generate the image from scratch (Expensive API Call)
+    logger.info(f"Generating new image via API... ({prompt_hash})")
+    try:
+        b64_data = generate_pixel_art_illustration(prompt)
+        if b64_data:
+            # Save to local /tmp
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                f.write(b64_data)
+                
+            # Upload to GCS Blob to expand the global library
+            if GCS_AVAILABLE and CACHE_BUCKET_NAME:
+                try:
+                    client = storage.Client()
+                    bucket = client.bucket(CACHE_BUCKET_NAME)
+                    blob = bucket.blob(f"images/{blob_filename}")
+                    blob.upload_from_string(b64_data, content_type="text/plain")
+                    logger.info("New image added to global GCS library.")
+                except Exception as e:
+                    logger.warning("Failed to upload image to GCS Blob: %s", e)
+                    
+            return b64_data
+    except Exception:
+        logger.exception("Image generation failed")
+        
+    return None
 
 
 def maybe_generate_inline_visual(prompt: Optional[str]) -> Optional[str]:
@@ -567,7 +631,6 @@ def render_interleaved_content(raw_text: str, enable_visuals: bool = True) -> st
 # =====================================================================
 # MULTI-CONTAINER BLOB CACHING FOR RENDERED INTRO MESSAGE
 # =====================================================================
-CACHE_BUCKET_NAME = os.environ.get("CACHE_BUCKET_NAME")
 BLOB_FILENAME = "arc_intro_rendered.txt"
 TMP_INTRO_FILE = f"/tmp/{BLOB_FILENAME}"
 
@@ -575,20 +638,11 @@ _intro_lock = threading.Lock()
 _MEM_CACHE_INTRO = None
 
 def get_rendered_opening_message() -> str:
-    """
-    Fetches the opening message using a 3-tier cache system:
-    1. RAM (Instant for this specific worker)
-    2. Local /tmp Disk (Instant for other workers in the same container)
-    3. GCS Blob (Fast sync across multiple Cloud Run containers)
-    4. Fallback to LLM/Image generation if none exist.
-    """
     global _MEM_CACHE_INTRO
 
-    # Tier 1: RAM Cache
     if _MEM_CACHE_INTRO:
         return _MEM_CACHE_INTRO
 
-    # Tier 2: Local Container Disk Cache (/tmp)
     if os.path.exists(TMP_INTRO_FILE):
         try:
             with open(TMP_INTRO_FILE, "r", encoding="utf-8") as f:
@@ -599,15 +653,12 @@ def get_rendered_opening_message() -> str:
         except Exception as e:
             logger.warning("Failed to read intro from local /tmp: %s", e)
 
-    # Lock to prevent multiple threads from hitting GCS or LLM simultaneously
     with _intro_lock:
-        # Double check inside lock
         if os.path.exists(TMP_INTRO_FILE):
             with open(TMP_INTRO_FILE, "r", encoding="utf-8") as f:
                 _MEM_CACHE_INTRO = f.read().strip()
                 return _MEM_CACHE_INTRO
 
-        # Tier 3: Google Cloud Storage Blob Cache (Cross-Container Sync)
         if GCS_AVAILABLE and CACHE_BUCKET_NAME:
             try:
                 client = storage.Client()
@@ -617,28 +668,20 @@ def get_rendered_opening_message() -> str:
                 if blob.exists():
                     logger.info("Downloading cached intro message from GCS Blob...")
                     content = blob.download_as_text()
-                    
-                    # Save to local /tmp for other workers in this container
                     with open(TMP_INTRO_FILE, "w", encoding="utf-8") as f:
                         f.write(content)
-                        
                     _MEM_CACHE_INTRO = content
                     return content
             except Exception as e:
                 logger.warning("Failed to read from GCS Blob: %s", e)
 
-        # Tier 4: Generate from scratch (LLM + Image API)
         try:
             logger.info("Generating new intro message via LLM...")
             raw_msg = generate_intro_message()
             if raw_msg:
                 rendered_msg = render_interleaved_content(raw_msg, enable_visuals=True)
-                
-                # Save to local /tmp
                 with open(TMP_INTRO_FILE, "w", encoding="utf-8") as f:
                     f.write(rendered_msg)
-                    
-                # Upload to GCS Blob so other containers can use it
                 if GCS_AVAILABLE and CACHE_BUCKET_NAME:
                     try:
                         logger.info("Uploading newly generated intro to GCS Blob...")
@@ -654,7 +697,6 @@ def get_rendered_opening_message() -> str:
         except Exception:
             logger.exception("Failed to generate opening message")
             
-    # Absolute Fallback (Do not cache failures)
     return render_interleaved_content(FALLBACK_OPENING_MSG, enable_visuals=True)
 
 
@@ -1214,7 +1256,7 @@ def run_turn(
 def handle_startup_load():
     """Generates the fresh opening message lazily on first load."""
     rendered_msg = get_rendered_opening_message()
-    return [{"role": "assistant", "content": rendered_msg}]
+    return[{"role": "assistant", "content": rendered_msg}]
 
 def refresh_panels(request: gr.Request):
     store = get_session_store(request)
