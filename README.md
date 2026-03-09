@@ -2,6 +2,10 @@
 
 ArcMotivate is a high-performance career simulator that bridges the gap between personality traits and professional roles for users aged 8–18. It uses a Socratic coaching loop and visual artifacts to help users discover realistic career paths.
 
+It utilises the multimodal interleaved capabilities of Gemini 3.1 Flash Lite to generate responsive answers to the users question.
+
+Each user is free to generate their own storybook of their future by exploring new careers 'Arcs'. Unlike a traditional career coach, the tool assumes that anything is possible, hence it is possible to explore freely in a world where education often limits the choices. 
+
 ## Core Logic
 
 - **Professional Archetyping**: Analyzes chat and images to map user interests to "Professional Archetypes" (e.g., *The Technical Maker*, *The Data Storyteller*).
