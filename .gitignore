@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+.DS_Store
 *.py[cod]
 *.pyo
 *.pyd
@@ -16,6 +17,7 @@ env/
 
 # Environment variables
 .env
+*.env
 
 # Logs
 *.log
@@ -25,6 +27,18 @@ app_log.txt
 *.egg-info/
 dist/
 build/
+
+# Temporary files
+tmp/
+.tmp/
+
+# Security / Credentials (Never check these in)
+*.key
+*.pem
+*.json
+auth.json
+!cloudbuild.yaml
+!package.json
 
 # IDEs
 .idea/
