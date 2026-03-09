@@ -316,6 +316,7 @@ body,.gradio-container{
   .chat-input-hint{font-size:0.75rem; margin-top:4px}
   .chat-inline-visual img{max-height:100px}
   .story-avatar{width:90px; height:90px}
+  .tab-nav button { padding: 8px 10px!important; font-size: 0.9rem!important; }
 }
 """
 
@@ -1304,9 +1305,9 @@ with gr.Blocks(title=APP_TITLE) as demo:
 
         with gr.Column(scale=4, min_width=280):
             with gr.Tabs():
-                with gr.TabItem("⚡ Agent Workspace"):
+                with gr.TabItem("⚡ Workspace"):
                     canvas_output = gr.HTML(format_canvas(default_session_store()))
-                with gr.TabItem("🧬 Your Story"):
+                with gr.TabItem("🧬 Story"):
                     identity_output = gr.HTML(render_identity_lab(default_session_store()))
 
     refresh_btn = gr.Button("Refresh story + workspace")
