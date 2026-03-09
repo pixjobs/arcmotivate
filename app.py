@@ -42,16 +42,6 @@ FALLBACK_OPENING_MSG = (
     "You can type a message or attach an image, and we’ll explore it together."
 )
 
-def get_opening_message():
-    try:
-        return generate_intro_message() or FALLBACK_OPENING_MSG
-    except Exception:
-        logger.exception("Failed to generate opening message")
-        return FALLBACK_OPENING_MSG
-
-# We will initialize this lazily inside the Gradio Blocks to avoid module-level API calls during startup
-OPENING_MSG = FALLBACK_OPENING_MSG
-
 STREAM_UPDATE_INTERVAL_SEC = 0.05
 MAX_CHAT_CONTEXT_MESSAGES = 12
 MAX_TILE_HISTORY_MESSAGES = 6
@@ -298,8 +288,38 @@ body,.gradio-container{
 }
 
 @media (max-width:768px){
-  .gradio-container{padding:10px 8px 16px!important}
-  .canvas-grid,.story-comic-strip{grid-template-columns:1fr}
+  /* 1. Reclaim screen real estate by reducing container padding */
+  .gradio-container{padding:6px 4px 12px!important}
+  
+  /* 2. Shrink the header slightly to keep the chat visible */
+  .arc-header{padding:4px 6px 8px}
+  .arc-logo{font-size:1.4rem; padding-bottom:4px}
+  .arc-tagline{font-size:0.8rem; letter-spacing:1px}
+  
+  /* 3. Make chat bubbles wider on mobile and reduce padding */
+  .gradio-chatbot{padding:6px!important}
+  .gradio-chatbot .message{
+    max-width:92%!important; /* Use more horizontal space */
+    padding:10px 12px!important;
+    margin-bottom:8px!important;
+  }
+  .gradio-chatbot .prose{font-size:0.95rem!important; line-height:1.5!important}
+  
+  /* 4. Stack grids into single columns */
+  .canvas-grid, .story-comic-strip{grid-template-columns:1fr; gap:10px}
+  
+  /* 5. Optimize the input shell for touch targets */
+  .chat-input-shell{margin-top:8px; padding:6px}
+  .chat-input-shell textarea{
+    min-height:44px!important; /* Standard mobile touch target size */
+    font-size:16px!important; /* Prevents iOS Safari from auto-zooming on focus */
+    padding:10px 12px!important;
+  }
+  .chat-input-hint{font-size:0.75rem; margin-top:4px}
+  
+  /* 6. Ensure inline visuals don't dominate the small screen */
+  .chat-inline-visual img{max-height:160px}
+  .story-avatar{width:90px; height:90px}
 }
 """
 
@@ -316,16 +336,16 @@ def default_session_store() -> Dict[str, Any]:
     return {
         "pending_image": None,
         "superpowers": {},
-        "tiles": [],
+        "tiles":[],
         "chat_turn_count": 0,
         "tile_count": 0,
         "avatar_b64": "",
         "recap": "",
-        "comic_panels": [],
+        "comic_panels":[],
         "postcard": {},
         "last_canvas_error": None,
         "last_identity_error": None,
-        "artifact_jobs": [],
+        "artifact_jobs":[],
         "artifact_running": False,
         "artifact_stage": "",
         "artifact_updated_at": 0.0,
@@ -342,7 +362,7 @@ def _session_id_from_request(request: Optional[gr.Request]) -> str:
 
 def _cleanup_stale_sessions() -> None:
     now = time.time()
-    stale_ids: List[str] = []
+    stale_ids: List[str] =[]
     with SESSION_STORES_LOCK:
         for session_id, store in SESSION_STORES.items():
             if session_id == "global":
@@ -371,7 +391,7 @@ def extract_text(content: Any) -> str:
     if isinstance(content, str):
         return content.strip()
     if isinstance(content, list):
-        texts: List[str] = []
+        texts: List[str] =[]
         for part in content:
             if isinstance(part, dict) and "text" in part:
                 texts.append(str(part["text"]))
@@ -473,7 +493,7 @@ def maybe_generate_inline_visual(prompt: Optional[str]) -> Optional[str]:
 def format_inline_images(image_b64_list: List[str]) -> str:
     if not image_b64_list:
         return ""
-    tags = []
+    tags =[]
     for b64 in image_b64_list[:MAX_INLINE_IMAGES_PER_TURN]:
         safe_b64 = html.escape(b64, quote=True)
         tags.append(f"<img src='data:image/png;base64,{safe_b64}' alt='arc visual'>")
@@ -505,7 +525,7 @@ def format_inline_visual_html(image_b64: str, align: str = "left") -> str:
     )
 
 def render_interleaved_content(raw_text: str, enable_visuals: bool = True) -> str:
-    parts: List[str] = []
+    parts: List[str] =[]
     remainder = raw_text
     visuals_used = 0
 
@@ -551,13 +571,62 @@ def render_interleaved_content(raw_text: str, enable_visuals: bool = True) -> st
 
     return "\n\n".join(parts)
 
+
+# =====================================================================
+# DISK-BASED CACHING FOR RENDERED INTRO MESSAGE (TEXT + IMAGE)
+# =====================================================================
+RENDERED_INTRO_FILE = "/tmp/arc_intro_rendered.txt"
+_intro_lock = threading.Lock()
+
+def get_rendered_opening_message() -> str:
+    """
+    Fetches the opening message, renders the HTML (which generates the image), 
+    and caches the entire HTML string (including the base64 image) to disk.
+    This ensures all workers in a Cloud Run container share the exact same 
+    pre-generated image and text instantly.
+    """
+    # 1. Fast path: Check if any worker has already saved the rendered HTML to disk
+    if os.path.exists(RENDERED_INTRO_FILE):
+        try:
+            with open(RENDERED_INTRO_FILE, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                if content:
+                    return content
+        except Exception as e:
+            logger.warning("Failed to read rendered intro from disk: %s", e)
+
+    # 2. If not on disk, acquire a lock so multiple threads don't hit the API at the exact same time
+    with _intro_lock:
+        # Double-check inside the lock in case another thread just finished writing it
+        if os.path.exists(RENDERED_INTRO_FILE):
+            with open(RENDERED_INTRO_FILE, "r", encoding="utf-8") as f:
+                return f.read().strip()
+
+        # 3. Generate the raw message via the LLM API
+        try:
+            raw_msg = generate_intro_message()
+            if raw_msg:
+                # Render it (this triggers the expensive image generation API call)
+                rendered_msg = render_interleaved_content(raw_msg, enable_visuals=True)
+                
+                # 4. Save the fully rendered HTML (with base64 image) to disk
+                with open(RENDERED_INTRO_FILE, "w", encoding="utf-8") as f:
+                    f.write(rendered_msg)
+                return rendered_msg
+        except Exception:
+            logger.exception("Failed to generate opening message")
+            
+    # 5. If it fails, return the fallback rendered, but DON'T save it to disk.
+    return render_interleaved_content(FALLBACK_OPENING_MSG, enable_visuals=True)
+
+
 def get_header_status_html(store: Dict[str, Any], busy: bool = False, stage: str = "") -> str:
     with store["lock"]:
         turn_count = int(store.get("chat_turn_count", 0))
-        tiles_count = len(store.get("tiles", []))
+        tiles_count = len(store.get("tiles",[]))
         artifact_running = bool(store.get("artifact_running"))
         artifact_stage = str(store.get("artifact_stage", "")).strip()
-        pending_jobs = len(store.get("artifact_jobs", []))
+        pending_jobs = len(store.get("artifact_jobs",[]))
 
     label = "Processing" if busy or artifact_running else "Ready"
     status_class = "arc-status is-busy" if busy or artifact_running else "arc-status"
@@ -582,7 +651,7 @@ def get_header_status_html(store: Dict[str, Any], busy: bool = False, stage: str
 
 def format_canvas(store: Dict[str, Any]) -> str:
     with store["lock"]:
-        tiles = deepcopy(store.get("tiles", []))
+        tiles = deepcopy(store.get("tiles",[]))
         error_text = str(store.get("last_canvas_error") or "")
         artifact_running = bool(store.get("artifact_running"))
         artifact_stage = str(store.get("artifact_stage", "")).strip()
@@ -599,7 +668,7 @@ def format_canvas(store: Dict[str, Any]) -> str:
         </div>
         """
 
-    html_parts = []
+    html_parts =[]
     if busy_text:
         html_parts.append(f"<div class='synth-spinner'>{safe_text(busy_text)}</div>")
     if error_text:
@@ -617,8 +686,8 @@ def format_canvas(store: Dict[str, Any]) -> str:
             else:
                 img_html = "<div class='tile-img-placeholder'>⚡</div>"
 
-            links_html = []
-            for link in tile.get("links") or []:
+            links_html =[]
+            for link in tile.get("links") or[]:
                 if isinstance(link, dict):
                     label = safe_text(link.get("label", "Explore"))
                     url = str(link.get("url", "")).strip()
@@ -628,7 +697,7 @@ def format_canvas(store: Dict[str, Any]) -> str:
                             f"rel='noopener noreferrer' class='tile-link'>🔗 {label}</a>"
                         )
 
-            skill_tags = tile.get("skill_tags") or []
+            skill_tags = tile.get("skill_tags") or[]
             tags_html = ""
             if skill_tags:
                 tags_html = "<div class='tile-skill-tags'>" + "".join(
@@ -666,7 +735,7 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
         avatar_b64 = store.get("avatar_b64", "")
         recap = store.get("recap", "")
         superpowers = deepcopy(store.get("superpowers", {}))
-        comic_panels = deepcopy(store.get("comic_panels", []))
+        comic_panels = deepcopy(store.get("comic_panels",[]))
         postcard = deepcopy(store.get("postcard", {}))
         error_text = str(store.get("last_identity_error") or "")
         artifact_running = bool(store.get("artifact_running"))
@@ -692,7 +761,7 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
         </div>
         """
 
-    sections: List[str] = []
+    sections: List[str] =[]
 
     if busy_text:
         sections.append(f"<div class='synth-spinner'>{safe_text(busy_text)}</div>")
@@ -716,7 +785,7 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
         """)
 
     if comic_panels:
-        panel_html_parts: List[str] = []
+        panel_html_parts: List[str] =[]
         for panel in comic_panels[:3]:
             img_b64 = panel.get("image_b64", "")
             caption = safe_text(panel.get("caption", ""))
@@ -774,7 +843,7 @@ def plan_artifacts(store: Dict[str, Any]) -> List[str]:
         postcard_missing = not bool(store.get("postcard"))
 
     if turn == 1:
-        jobs = ["tile", "recap"]
+        jobs =["tile", "recap"]
         if avatar_missing:
             jobs.append("avatar")
         return jobs
@@ -936,18 +1005,18 @@ def user_submit(
     history: Optional[List[Dict[str, Any]]],
     request: gr.Request,
 ):
-    history = history or []
+    history = history or[]
     store = get_session_store(request)
 
     if isinstance(user_message, dict):
         text = (user_message.get("text") or "").strip()
-        files = user_message.get("files") or []
+        files = user_message.get("files") or[]
     else:
         text = str(user_message or "").strip()
-        files = []
+        files =[]
 
     if not text and not files:
-        return gr.update(value={"text": "", "files": []}), history
+        return gr.update(value={"text": "", "files":[]}), history
 
     pending_image = None
     if files:
@@ -1033,7 +1102,7 @@ def run_turn(
         superpowers = deepcopy(store.get("superpowers", {}))
 
     accumulated_text = ""
-    inline_images: List[str] = []
+    inline_images: List[str] =[]
     last_ui_flush = 0.0
 
     try:
@@ -1106,8 +1175,8 @@ def run_turn(
 
 def handle_startup_load():
     """Generates the fresh opening message lazily on first load."""
-    msg = get_opening_message()
-    return [{"role": "assistant", "content": render_interleaved_content(msg, enable_visuals=True)}]
+    rendered_msg = get_rendered_opening_message()
+    return [{"role": "assistant", "content": rendered_msg}]
 
 def refresh_panels(request: gr.Request):
     store = get_session_store(request)
@@ -1131,9 +1200,11 @@ with gr.Blocks(title=APP_TITLE) as demo:
     header_status = gr.HTML(get_header_status_html(default_session_store()))
 
     with gr.Row(equal_height=False):
-        with gr.Column(scale=6, min_width=380):
+        # Reduced min_width so it stacks perfectly on mobile without horizontal scroll
+        with gr.Column(scale=6, min_width=280):
             chatbot = gr.Chatbot(
-                height=620,
+                # Use viewport height (vh) instead of fixed pixels so it adapts to the screen size
+                height="60vh",
                 show_label=False,
                 elem_classes=["chat-wrap"],
                 render_markdown=True,
@@ -1141,7 +1212,7 @@ with gr.Blocks(title=APP_TITLE) as demo:
 
             with gr.Column(elem_classes=["chat-input-shell"]):
                 msg_input = gr.MultimodalTextbox(
-                    placeholder="Type your message or add one image, then press Enter…",
+                    placeholder="Type a message or add an image...",
                     show_label=False,
                     container=False,
                     file_types=["image"],
@@ -1150,10 +1221,11 @@ with gr.Blocks(title=APP_TITLE) as demo:
                 )
                 gr.HTML(
                     "<div class='chat-input-hint'>Press <strong>Enter</strong> to send · "
-                    "<strong>Shift+Enter</strong> for a new line · you can add one image too</div>"
+                    "<strong>Shift+Enter</strong> for a new line</div>"
                 )
 
-        with gr.Column(scale=4, min_width=340):
+        # Reduced min_width here as well
+        with gr.Column(scale=4, min_width=280):
             with gr.Tabs():
                 with gr.TabItem("⚡ Agent Workspace"):
                     canvas_output = gr.HTML(format_canvas(default_session_store()))
@@ -1163,16 +1235,14 @@ with gr.Blocks(title=APP_TITLE) as demo:
     refresh_btn = gr.Button("Refresh story + workspace")
 
     submit_event = msg_input.submit(
-        user_submit,
-        [msg_input, chatbot],
+        user_submit,[msg_input, chatbot],
         [msg_input, chatbot],
         queue=False,
     )
 
     submit_event.then(
         run_turn,
-        [chatbot],
-        [msg_input, chatbot, canvas_output, identity_output, header_status],
+        [chatbot],[msg_input, chatbot, canvas_output, identity_output, header_status],
         concurrency_limit=1,
     )
 
