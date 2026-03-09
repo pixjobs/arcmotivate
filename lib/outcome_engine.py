@@ -16,26 +16,27 @@ DEFAULT_LINK = {
     "url": "https://www.google.com/search?q=career+exploration",
 }
 
+# UPGRADE: New punchy, mobile-friendly, visual-first fallback intro
 DEFAULT_INTRO = (
     "👾 **System Online — ArcMotivate**\n\n"
-    "Have you ever wondered what kind of future really fits you?\n\n"
-    "ArcMotivate is a live exploration agent. I can respond to what you write, what you show me, "
-    "and the patterns that emerge as we talk.\n\n"
-    "[VISUALIZE: A neon pixel-art control room waking up, with glowing screens, an open sketchbook, "
-    "tools, music notes, code fragments, and pathways branching into different futures]\n\n"
-    "Before we build your workspace, tell me a little about you. What energises you? What drains you? "
-    "What’s something you’re proud of, or a moment that has stuck with you?\n\n"
-    "You can type a message or attach an image, and we’ll explore it together."
+    "[VISUALIZE: A neon pixel-art control room waking up, glowing screens, pathways branching into different futures]\n\n"
+    "I map your input to find the future your mind demands. What moment keeps replaying in your head?\n\n"
+    "*Send a message or attach an image to begin.*"
 )
 
+# UPGRADE: Global client cache for fast background thread execution
+_CLIENT = None
 
 def get_client() -> genai.Client:
-    import os
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError("GOOGLE_API_KEY environment variable is missing. "
-                         "Check your Cloud Run 'Variables & Secrets' configuration.")
-    return genai.Client(api_key=api_key)
+    global _CLIENT
+    if _CLIENT is None:
+        import os
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY environment variable is missing. "
+                             "Check your Cloud Run 'Variables & Secrets' configuration.")
+        _CLIENT = genai.Client(api_key=api_key)
+    return _CLIENT
 
 
 def _safe_str(value: Any, fallback: str = "") -> str:
@@ -53,11 +54,11 @@ def _normalize_text(value: str) -> str:
 
 
 def _tile_memory(existing_tiles: Optional[List[Dict[str, Any]]]) -> Dict[str, List[str]]:
-    existing_tiles = existing_tiles or []
+    existing_tiles = existing_tiles or[]
 
     titles: List[str] = []
     categories: List[str] = []
-    skill_tags: List[str] = []
+    skill_tags: List[str] =[]
 
     for tile in existing_tiles:
         title = _safe_str(tile.get("title"))
@@ -68,7 +69,7 @@ def _tile_memory(existing_tiles: Optional[List[Dict[str, Any]]]) -> Dict[str, Li
         if category:
             categories.append(category.lower())
 
-        for tag in tile.get("skill_tags") or []:
+        for tag in tile.get("skill_tags") or[]:
             tag = _safe_str(tag)
             if tag:
                 skill_tags.append(tag.lower())
@@ -81,13 +82,13 @@ def _tile_memory(existing_tiles: Optional[List[Dict[str, Any]]]) -> Dict[str, Li
 
 
 def _is_duplicate_tile(candidate: Dict[str, Any], existing_tiles: Optional[List[Dict[str, Any]]]) -> bool:
-    existing_tiles = existing_tiles or []
+    existing_tiles = existing_tiles or[]
 
     cand_title = _normalize_text(_safe_str(candidate.get("title")))
     cand_category = _normalize_text(_safe_str(candidate.get("category")))
     cand_tags = {
         _normalize_text(_safe_str(tag))
-        for tag in (candidate.get("skill_tags") or [])
+        for tag in (candidate.get("skill_tags") or[])
         if _safe_str(tag)
     }
 
@@ -99,7 +100,7 @@ def _is_duplicate_tile(candidate: Dict[str, Any], existing_tiles: Optional[List[
         prev_category = _normalize_text(_safe_str(tile.get("category")))
         prev_tags = {
             _normalize_text(_safe_str(tag))
-            for tag in (tile.get("skill_tags") or [])
+            for tag in (tile.get("skill_tags") or[])
             if _safe_str(tag)
         }
 
@@ -115,9 +116,9 @@ def _is_duplicate_tile(candidate: Dict[str, Any], existing_tiles: Optional[List[
 
 
 def _validated_links(tile: Dict[str, Any]) -> List[Dict[str, str]]:
-    validated: List[Dict[str, str]] = []
+    validated: List[Dict[str, str]] =[]
 
-    for link in (tile.get("links") or []):
+    for link in (tile.get("links") or[]):
         if not isinstance(link, dict):
             continue
 
@@ -127,7 +128,7 @@ def _validated_links(tile: Dict[str, Any]) -> List[Dict[str, str]]:
         if url.startswith("https://"):
             validated.append({"label": label, "url": url})
 
-    return validated[:1] or [DEFAULT_LINK]
+    return validated[:1] or[DEFAULT_LINK]
 
 
 def _build_tile_prompt(
@@ -206,11 +207,11 @@ def _tile_response_schema() -> Dict[str, Any]:
                         "label": {"type": "STRING"},
                         "url": {"type": "STRING"},
                     },
-                    "required": ["label", "url"],
+                    "required":["label", "url"],
                 },
             },
         },
-        "required": [
+        "required":[
             "category",
             "title",
             "content",
@@ -228,7 +229,7 @@ def _sanitize_tile(tile: Dict[str, Any]) -> Dict[str, Any]:
         "title": _safe_str(tile.get("title"), "Career Path"),
         "content": _safe_str(tile.get("content"), "This seems connected to a real direction worth exploring."),
         "image_prompt": _safe_str(tile.get("image_prompt"), "A neon pixel-art professional scene with tools, screens, and focused work in progress"),
-        "skill_tags": [
+        "skill_tags":[
             _safe_str(tag)
             for tag in (tile.get("skill_tags") or [])
             if _safe_str(tag)
@@ -245,7 +246,7 @@ def synthesize_single_tile(
 ) -> Optional[Dict[str, Any]]:
     """Generate one non-duplicate canvas tile."""
     client = get_client()
-    existing_tiles = existing_tiles or []
+    existing_tiles = existing_tiles or[]
 
     recent_history = journey_data[-6:]
     history_text = "\n".join(
@@ -318,6 +319,7 @@ def _intro_schema() -> Dict[str, Any]:
 
 
 def _intro_prompt() -> str:
+    # UPGRADE: Enforces the Visual-First layout and extreme brevity for mobile
     return """
 You are ArcMotivate, a live interface mapping the contours of a user's potential.
 
@@ -327,19 +329,14 @@ CRITICAL: The output must be EXTREMELY concise to fit on a small mobile screen w
 Output requirements:
 - Return JSON only with one key: "intro_text"
 - The value must be markdown text.
-- STRICT LENGTH LIMIT: Maximum of 3 to 4 short sentences total. Cut all filler words.
-- Preserve the "system online / live exploration" vibe.
-- Briefly explain that you adjust to what they share to uncover a future that fits how their mind works.
-- Ask a punchy starting question (e.g., what energizes them, drains them, or a moment stuck on loop).
-- Include exactly one [VISUALIZE: ...] marker woven naturally. The prompt inside must describe a neon pixel-art scene.
+- STRICT LENGTH LIMIT: Maximum of 3 short sentences total. Cut all filler words.
+- Structure: EXACTLY this order (No sandwiching!):
+  1. FIRST: 1 [VISUALIZE: <prompt>] marker describing a neon pixel-art control room waking up.
+  2. SECOND: A short explanation that you map their input to find the future their mind demands.
+  3. THIRD: A punchy starting question (e.g., what energizes them, or a moment stuck on loop).
 - End by inviting them to type a message or attach an image.
 - Do NOT include any [SKILL: ...] markers.
-- Do NOT sound like a therapist, teacher, or generic assistant. No cheesy motivational language.
-
-Structure:
-- Short opening beat (1 sentence)
--[VISUALIZE: ...] marker
-- Short explanation + clear invitation to start (1-2 sentences)
+- Do NOT sound like a therapist, teacher, or generic assistant.
 
 Output JSON only.
 """.strip()
