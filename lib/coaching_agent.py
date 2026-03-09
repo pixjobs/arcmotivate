@@ -15,18 +15,26 @@ DEFAULT_DESCRIPTION = "You notice what pulls you in and learn by trying."
 DEFAULT_GROWTH_NUDGE = "Try one small new thing this week."
 DEFAULT_GREETING = "Hi"
 
-MAX_HISTORY_MESSAGES = 12
-DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
+# OPTIMIZATION 1: Reduce history to 6 messages (3 turns). Less reading = faster response.
+MAX_HISTORY_MESSAGES = 6 
+
+# Kept your original model
+DEFAULT_MODEL = "gemini-3.1-flash-lite-preview" 
 DEFAULT_TEMPERATURE = 0.65
 
+# OPTIMIZATION 2: Cache the client globally so we don't rebuild it on every request
+_CLIENT = None
 
 def get_client() -> genai.Client:
-    import os
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError("GOOGLE_API_KEY environment variable is missing. "
-                         "Check your Cloud Run 'Variables & Secrets' configuration.")
-    return genai.Client(api_key=api_key)
+    global _CLIENT
+    if _CLIENT is None:
+        import os
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY environment variable is missing. "
+                             "Check your Cloud Run 'Variables & Secrets' configuration.")
+        _CLIENT = genai.Client(api_key=api_key)
+    return _CLIENT
 
 
 def _normalize_role(role: str) -> str:
@@ -52,88 +60,24 @@ def _build_system_instruction(superpowers: Dict[str, Any]) -> str:
     description = _safe_str(superpowers.get("description"), DEFAULT_DESCRIPTION)
     growth_nudge = _safe_str(superpowers.get("growth_nudge"), DEFAULT_GROWTH_NUDGE)
 
+    # OPTIMIZATION 3: "Goldilocks" prompt. Fast TTFT (Time-To-First-Token) but retains richness.
     return f"""
-You are ArcMotivate.
-
-Talk to one young person, age 8 to 18.
-
-Voice:
-Sharp, warm, curious, real.
-Not therapist-y. Not teacher-y. Not corporate. Not generic AI.
-No patronizing. No fake teen slang. No profanity.
-Ignore bait, spam, or junk.
+You are ArcMotivate, a live interface for a young person (age 8-18).
 
 Current read:
-- Identity: {primary}
-- Style: {secondary}
+- Identity: {primary} ({secondary})
 - Superpower: {superpower}
 - Read: {description}
-- Growth nudge: {growth_nudge}
+- Nudge: {growth_nudge}
 
-Goal:
-Help them notice what fits them.
-Help them get clearer on what they enjoy, what gives them energy, and how they work best.
-Do not jump too fast to careers.
-The richer exploration already happens elsewhere in the interface, so keep chat light and fast.
-
-Response format:
-- 2 to 4 short blocks total
-- Keep your own text under 40 words
-- 1 question only
-- 1 idea at a time
-- Be specific to what they said or showed
-- If an image is attached, mention one visible detail when useful
-
-Preferred shape:
-1. One sharp reflection
-2. [VISUALIZE: ...]
-3. One insight
-4. One question
-
-Marker rules:
-
-[VISUALIZE: <prompt>]
-- Use in most responses, but only once
-- Keep it short and vivid
-- Describe a neon pixel-art scene that reflects the moment
-- The visual should work well as a square image
-- Favor a single subject, one setting, and a clean silhouette
-- Avoid wide panoramic compositions
-- Put it between text blocks
-
-[SKILL: <name> | <google search url> | <try this>]
-- Avoid this unless the fit is unusually concrete and worth surfacing immediately
-- In most responses, do not use it
-- If used, keep it short and practical
-
-Writing rules:
-- Plain, concise language
-- Concrete, not fluffy
-- Lightly playful, never cheesy
-- No overpraising
-- No long personality summaries
-- No bullet lists unless necessary
-
-Hard bans:
-- “That’s amazing”
-- “That’s so powerful”
-- “You’re on a journey”
-- “The future is wide open”
-- Generic motivation
-- Responding to swear words
-- More than one question
-- More than one [VISUALIZE]
-- More than one [SKILL]
-
-Example shape:
-
-You seem most switched on when you get to test things for yourself.
-
-[VISUALIZE: A neon pixel-art inventor at a compact workbench, surrounded by a few glowing tools and one half-built prototype]
-
-That kind of hands-on curiosity often turns into real problem-solving range.
-
-Do you like improving things more, or inventing from scratch?
+CRITICAL RULES FOR SPEED AND RICHNESS:
+1. Be EXTREMELY concise. Keep your conversational text under 40 words total.
+2. Voice: Sharp, warm, real. No therapist/teacher vibes. No cringe slang.
+3. Observation: If they attach an image, explicitly mention a specific detail from it.
+4. Goal: Focus on what energizes them. Do NOT jump to career advice yet.
+5. Structure: 1 short reflection -> 1[VISUALIZE: ...] marker -> 1 short question.
+6. [VISUALIZE: <prompt>] must describe a vivid neon pixel-art scene. Use exactly once.
+7. Never use lists. Never say "That's amazing" or "You're on a journey".
 """.strip()
 
 
@@ -155,7 +99,7 @@ def _build_contents(
     image_bytes: Optional[bytes] = None,
     image_mime: str = "image/jpeg",
 ) -> List[types.Content]:
-    contents: List[types.Content] = []
+    contents: List[types.Content] =[]
 
     for msg in _trim_chat_history(chat_history):
         contents.append(
@@ -176,7 +120,7 @@ def _build_contents(
             contents.append(types.Content(role="user", parts=[image_part]))
 
     if not contents:
-        contents = [
+        contents =[
             types.Content(
                 role="user",
                 parts=[types.Part.from_text(text=DEFAULT_GREETING)],
@@ -187,12 +131,12 @@ def _build_contents(
 
 
 def _iter_chunk_parts(chunk: Any) -> Iterator[Any]:
-    candidates = getattr(chunk, "candidates", None) or []
+    candidates = getattr(chunk, "candidates", None) or[]
     for candidate in candidates:
         content = getattr(candidate, "content", None)
         if not content:
             continue
-        for part in getattr(content, "parts", None) or []:
+        for part in getattr(content, "parts", None) or[]:
             yield part
 
 
@@ -219,10 +163,6 @@ def generate_socratic_stream(
 ):
     """
     Streams interleaved text and optional generated images from the coaching agent.
-
-    Yields:
-        {"type": "text", "data": "..."}
-        {"type": "image", "data": "<base64>"}
     """
     system_instruction = _build_system_instruction(superpowers)
     contents = _build_contents(
@@ -231,28 +171,30 @@ def generate_socratic_stream(
         image_mime=image_mime,
     )
 
+    # OPTIMIZATION 4: max_output_tokens forces the LLM to stop early, guaranteeing speed.
     config = types.GenerateContentConfig(
         system_instruction=system_instruction,
         temperature=DEFAULT_TEMPERATURE,
+        max_output_tokens=150, 
     )
 
     try:
-        with get_client() as client:
-            stream = client.models.generate_content_stream(
-                model=DEFAULT_MODEL,
-                contents=contents,
-                config=config,
-            )
+        client = get_client()
+        stream = client.models.generate_content_stream(
+            model=DEFAULT_MODEL,
+            contents=contents,
+            config=config,
+        )
 
-            for chunk in stream:
-                chunk_text = getattr(chunk, "text", None)
-                if chunk_text:
-                    yield {"type": "text", "data": chunk_text}
+        for chunk in stream:
+            chunk_text = getattr(chunk, "text", None)
+            if chunk_text:
+                yield {"type": "text", "data": chunk_text}
 
-                for part in _iter_chunk_parts(chunk):
-                    image_b64 = _extract_inline_image_b64(part)
-                    if image_b64:
-                        yield {"type": "image", "data": image_b64}
+            for part in _iter_chunk_parts(chunk):
+                image_b64 = _extract_inline_image_b64(part)
+                if image_b64:
+                    yield {"type": "image", "data": image_b64}
 
     except Exception:
         logger.exception("Agent stream failed")
