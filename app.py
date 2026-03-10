@@ -136,6 +136,8 @@ body,.gradio-container{
 .gradio-chatbot,.gradio-chatbot>div,.gradio-chatbot .panel{
   background:transparent!important;border:none!important;box-shadow:none!important
 }
+.scroll-panel{max-height:55vh;overflow-y:auto;overflow-x:hidden;padding-right:4px}
+
 .gradio-chatbot{padding:8px!important}
 .gradio-chatbot .message{
   width:fit-content!important;max-width:min(88%,820px)!important;
@@ -814,9 +816,9 @@ def format_canvas(store: Dict[str, Any]) -> str:
 
     if not tiles and not busy_text and not error_text:
         return """
-        <div class='canvas-empty'>
-            <div class='canvas-empty-icon'>🎮</div>
-            <div class='canvas-empty-text'>Start exploring to unlock your unique workspace artifacts.</div>
+        <div class='scroll-panel canvas-empty'>
+            <div class='canvas-empty-icon'>🧩</div>
+            <div class='canvas-empty-text'>Your workspace is empty.<br>Start chatting to build your profile.</div>
         </div>
         """
 
@@ -879,7 +881,7 @@ def format_canvas(store: Dict[str, Any]) -> str:
             )
         html_parts.append("</div>")
 
-    return "".join(html_parts)
+    return f"<div class='scroll-panel'>{''.join(html_parts)}</div>"
 
 def render_identity_lab(store: Dict[str, Any]) -> str:
     """Generates the HTML for the Story tab."""
@@ -907,9 +909,9 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
 
     if not has_content and not busy_text and not error_text:
         return """
-        <div class='canvas-empty'>
-            <div class='canvas-empty-icon'>🧬</div>
-            <div class='canvas-empty-text'>Start chatting to build your exploration story.</div>
+        <div class='scroll-panel story-card' style='text-align:center;padding:40px 20px;color:#7b8ba3'>
+            <div style='font-size:2rem;margin-bottom:10px;opacity:0.4'>📖</div>
+            <div style='font-size:0.9rem'>Your story hasn't started yet.<br>Share what you care about.</div>
         </div>
         """
 
@@ -1004,7 +1006,7 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
         </div>
         """)
 
-    return f"<div class='story-card'><div class='story-card-title'>Your Exploration Story</div>{''.join(sections)}</div>"
+    return f"<div class='scroll-panel story-card'><div class='story-card-title'>Your Exploration Story</div>{''.join(sections)}</div>"
 
 # =====================================================================
 # BACKGROUND ARTIFACT GENERATION
@@ -1479,7 +1481,7 @@ with gr.Blocks(title=APP_TITLE) as demo:
     with gr.Row(equal_height=False):
         with gr.Column(scale=6, min_width=280):
             chatbot = gr.Chatbot(
-                height="60vh",
+                height="55vh",
                 show_label=False,
                 elem_classes=["chat-wrap"],
                 render_markdown=True,
