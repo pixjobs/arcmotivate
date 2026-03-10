@@ -1,3 +1,10 @@
+"""
+Storybook Generator
+Handles the generation of personalized, visual-first story artifacts:
+Hero Recaps, Custom Avatars, Identity Comics, and Future Postcards.
+Enforces Split-Language Architecture for multilingual support.
+"""
+
 import base64
 import concurrent.futures
 import json
@@ -6,6 +13,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from google import genai
+from google.genai import types
 from lib.image_utils import compress_generated_image
 
 logger = logging.getLogger(__name__)
@@ -15,10 +23,11 @@ TEXT_MODEL = "gemini-3.1-flash-lite-preview"
 STRUCTURED_MODEL = "gemini-3.1-flash-lite-preview"
 IMAGE_MODEL = "gemini-3.1-flash-image-preview"
 
-# UPGRADE 1: Global client cache for fast background thread execution
+# Global client cache for fast background thread execution
 _CLIENT = None
 
 def get_client() -> genai.Client:
+    """Lazily initializes and returns the Google GenAI client."""
     global _CLIENT
     if _CLIENT is None:
         api_key = os.environ.get("GOOGLE_API_KEY")
@@ -33,12 +42,14 @@ def get_client() -> genai.Client:
 # ============================================================
 
 def _safe_str(value: Any, fallback: str = "") -> str:
+    """Safely converts any value to a string, returning a fallback if empty."""
     if value is None:
         return fallback
     text = str(value).strip()
     return text if text else fallback
 
 def _extract_text_from_msg(msg: Dict[str, Any]) -> str:
+    """Extracts plain text from a multimodal message dictionary."""
     text = msg.get("text")
     if text and isinstance(text, str):
         return text
@@ -56,6 +67,7 @@ def _extract_text_from_msg(msg: Dict[str, Any]) -> str:
     return ""
 
 def _collect_interests(user_profile: Dict[str, Any], limit: int = 6) -> List[str]:
+    """Extracts a limited list of user interests from their profile."""
     superpowers = user_profile.get("superpowers", {}) or user_profile
     interests = superpowers.get("interests")
     if not isinstance(interests, list):
@@ -69,6 +81,7 @@ def _collect_interests(user_profile: Dict[str, Any], limit: int = 6) -> List[str
     return out
 
 def _profile_summary(user_profile: Dict[str, Any]) -> Dict[str, str]:
+    """Flattens the user profile into a safe dictionary of strings."""
     superpowers = user_profile.get("superpowers", {}) or user_profile
     primary = superpowers.get("primary") or superpowers.get("archetype") or "Explorer"
     secondary = superpowers.get("secondary") or ""
@@ -86,7 +99,8 @@ def _profile_summary(user_profile: Dict[str, Any]) -> Dict[str, str]:
     }
 
 def _recent_history_text(recent_chat: Optional[List[Dict[str, Any]]], limit: int = 6) -> str:
-    history_lines: List[str] = []
+    """Formats the recent chat history into a readable string block."""
+    history_lines: List[str] =[]
     for msg in recent_chat or[]:
         role = str(msg.get("role", "user"))
         text = _safe_str(_extract_text_from_msg(msg))
@@ -99,6 +113,7 @@ def _recent_history_text(recent_chat: Optional[List[Dict[str, Any]]], limit: int
 # ============================================================
 
 def _visual_style_guide() -> str:
+    """Returns the global visual style prompt for image generation."""
     return (
         "Style: polished pixel-art / illustrated synthwave hybrid, grounded futuristic mood, "
         "clean silhouettes, expressive lighting, subtle neon accents, emotionally readable scenes, "
@@ -106,6 +121,7 @@ def _visual_style_guide() -> str:
     )
 
 def _story_context_block(user_profile: Dict[str, Any], recent_chat: Optional[List[Dict[str, Any]]] = None) -> str:
+    """Builds the context block containing the user's profile and recent chat."""
     profile = _profile_summary(user_profile)
     history_text = _recent_history_text(recent_chat)
 
@@ -126,6 +142,7 @@ Recent conversation (CRITICAL - Anchor the story to these specific details):
 # ============================================================
 
 def generate_hero_recap(user_profile: Dict[str, Any]) -> str:
+    """Generates a short, punchy storybook recap based on the user's profile."""
     client = get_client()
 
     prompt = f"""
@@ -138,6 +155,11 @@ Requirements:
 - Be highly specific to their actual interests. Do not use generic templates.
 - Name a real pattern emerging in how they think or work.
 - Do not use career brochure language or sound like a therapist.
+
+CRITICAL LANGUAGE RULE: 
+Analyze the recent conversation. Identify the primary language being used. 
+If the user's most recent message is very short (e.g., 'yes', 'no', 'not yet', a name), ignore it for language detection and match the language of the broader conversation. 
+You MUST write the recap entirely in that specific language.
 """.strip()
 
     fallback = "You’re starting to notice what gives you energy. Keep following the signals that feel real."
@@ -146,12 +168,12 @@ Requirements:
         response = client.models.generate_content(
             model=TEXT_MODEL,
             contents=prompt,
-            config={"temperature": 0.7},
+            config=types.GenerateContentConfig(temperature=0.7),
         )
         text = (response.text or "").strip()
         return text or fallback
-    except Exception as exc:
-        logger.error("Hero recap generation failed: %s", exc)
+    except Exception as e:
+        logger.error("Hero recap generation failed: %s", e)
         return fallback
 
 # ============================================================
@@ -173,11 +195,12 @@ Prioritise visual clarity, emotional readability, and scene composition over vis
 """.strip()
 
     try:
+        # Note: Using dict for config here as image_config is specific to image models
         response = client.models.generate_content(
             model=IMAGE_MODEL,
             contents=full_prompt,
             config={
-                "response_modalities":["IMAGE"],
+                "response_modalities": ["IMAGE"],
                 "image_config": {"aspect_ratio": aspect_ratio},
             },
         )
@@ -185,21 +208,19 @@ Prioritise visual clarity, emotional readability, and scene composition over vis
         for part in (getattr(response, "parts", None) or[]):
             inline_data = getattr(part, "inline_data", None)
             if inline_data and getattr(inline_data, "data", None):
-                # UPGRADE 2: Compress the massive 1024x1024 image down to save memory
                 try:
                     compressed = compress_generated_image(inline_data.data, size=compress_size)
                     if compressed:
                         return compressed
-                except Exception:
-                    logger.warning("Image compression failed, falling back to raw base64")
+                except Exception as e:
+                    logger.warning("Image compression failed, falling back to raw base64: %s", e)
                 
                 return base64.b64encode(inline_data.data).decode("utf-8")
 
-    except Exception as exc:
-        logger.error("Illustration generation failed: %s", exc)
+    except Exception as e:
+        logger.error("Illustration generation failed: %s", e)
 
     return ""
-
 
 # ============================================================
 # CUSTOM AVATAR
@@ -210,7 +231,12 @@ def generate_custom_avatar(
     latest_signal: str = "",
     aspect_ratio: str = "1:1",
 ) -> str:
+    """Generates a custom avatar portrait based on the user's archetype and interests."""
     profile = _profile_summary(user_profile)
+    
+    # Defensive Prompting: Strip the[SYSTEM DIRECTIVE] out of the signal 
+    # so it doesn't confuse the English-only image generation model.
+    clean_signal = latest_signal.split("[SYSTEM DIRECTIVE")[0].strip()
 
     prompt = f"""
 Create a custom avatar portrait for a young person's exploration profile.
@@ -219,7 +245,7 @@ Character signals:
 - Core archetype: {profile['primary']}
 - Superpower: {profile['superpower']}
 - Interests: {profile['interests']}
-- Latest conversational signal: {latest_signal}
+- Latest conversational signal: {clean_signal}
 
 Requirements:
 - Portrait only.
@@ -231,7 +257,6 @@ Requirements:
 
     # Compress avatar to 320px since it's displayed small in the UI
     return generate_pixel_art_illustration(prompt, aspect_ratio=aspect_ratio, compress_size=320)
-
 
 # ============================================================
 # 3-PANEL IDENTITY COMIC
@@ -247,19 +272,16 @@ def _generate_single_panel(panel: Dict[str, str]) -> Dict[str, str]:
         try:
             # Compress comic panels to 320px to keep the grid lightweight
             image_b64 = generate_pixel_art_illustration(image_prompt, aspect_ratio="4:3", compress_size=320)
-        except Exception:
-            logger.exception("Comic panel image generation failed")
+        except Exception as e:
+            logger.exception("Comic panel image generation failed: %s", e)
             
     return {"caption": caption, "image_b64": image_b64}
-
 
 def generate_identity_comic(
     user_profile: Dict[str, Any],
     recent_chat: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, str]]:
-    """
-    Generate a 3-panel identity comic using parallel processing for speed.
-    """
+    """Generates a 3-panel identity comic using parallel processing for speed."""
     client = get_client()
 
     prompt = f"""
@@ -284,18 +306,22 @@ Constraints:
 - exactly 3 panels.
 - grounded in real-world settings.
 - visual continuity across the three panels.
+
+CRITICAL LANGUAGE RULES:
+1. Analyze the recent conversation. Identify the primary language being used. If the user's most recent message is very short (e.g., 'yes', 'no', 'not yet', a name), ignore it for language detection and match the language of the broader conversation. You MUST write the "caption" entirely in that specific language.
+2. HOWEVER, the "image_prompt" field MUST ALWAYS be written in English. Image generation models do not understand other languages.
 """.strip()
 
     schema = {
-        "type": "object",
+        "type": "OBJECT",
         "properties": {
             "panels": {
-                "type": "array",
+                "type": "ARRAY",
                 "items": {
-                    "type": "object",
+                    "type": "OBJECT",
                     "properties": {
-                        "caption": {"type": "string"},
-                        "image_prompt": {"type": "string"},
+                        "caption": {"type": "STRING"},
+                        "image_prompt": {"type": "STRING"},
                     },
                     "required": ["caption", "image_prompt"],
                 },
@@ -308,31 +334,29 @@ Constraints:
         response = client.models.generate_content(
             model=STRUCTURED_MODEL,
             contents=prompt,
-            config={
-                "temperature": 0.65,
-                "response_mime_type": "application/json",
-                "response_json_schema": schema,
-            },
+            config=types.GenerateContentConfig(
+                temperature=0.65,
+                response_mime_type="application/json",
+                response_schema=schema,
+            ),
         )
         data = json.loads((response.text or "").strip())
         panels_raw = (data.get("panels") or [])[:3]
-    except Exception as exc:
-        logger.error("Comic panel spec generation failed: %s", exc)
+    except Exception as e:
+        logger.error("Comic panel spec generation failed: %s", e)
         panels_raw =[
             {"caption": "Something caught your attention.", "image_prompt": "A young person leaning over a desk, focused on a project, evening light, grounded futuristic room"},
             {"caption": "You started testing it.", "image_prompt": "The same young person trying things hands-on, sketching or experimenting at a desk"},
             {"caption": "Now the path feels clearer.", "image_prompt": "The same young person looking at a wall full of ideas starting to connect, calm confidence"},
         ]
 
-    # UPGRADE 3: Parallel Processing. 
-    # Generate all 3 images at the exact same time instead of waiting for them one by one.
+    # Parallel Processing: Generate all 3 images at the exact same time
     result: List[Dict[str, str]] =[]
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         # Map maintains the order of the panels
         result = list(executor.map(_generate_single_panel, panels_raw))
 
     return result
-
 
 # ============================================================
 # FUTURE POSTCARD
@@ -342,9 +366,7 @@ def generate_future_postcard(
     user_profile: Dict[str, Any],
     recent_chat: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, str]:
-    """
-    Generate a 'Postcard from Future You' artifact.
-    """
+    """Generates a 'Postcard from Future You' artifact with a translated caption."""
     client = get_client()
     profile = _profile_summary(user_profile)
 
@@ -358,17 +380,22 @@ Rules:
 - MUST reference a specific detail from their recent chat or interests.
 - warm, calm, believable.
 - start with "You're" or "You".
+
+CRITICAL LANGUAGE RULE: 
+Analyze the recent conversation. Identify the primary language being used. 
+If the user's most recent message is very short (e.g., 'yes', 'no', 'not yet', a name), ignore it for language detection and match the language of the broader conversation. 
+You MUST write the postcard line entirely in that specific language.
 """.strip()
 
     try:
         response = client.models.generate_content(
             model=TEXT_MODEL,
             contents=caption_prompt,
-            config={"temperature": 0.75},
+            config=types.GenerateContentConfig(temperature=0.75),
         )
         caption = (response.text or "").strip().strip('"')
-    except Exception:
-        logger.exception("Postcard caption failed")
+    except Exception as e:
+        logger.exception("Postcard caption failed: %s", e)
         caption = "You're still exploring, but you trust your own signals more now."
 
     image_prompt = f"""

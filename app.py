@@ -1,4 +1,13 @@
+"""
+ArcMotivate - Interactive Career Explorer
+Main Gradio Application Entry Point.
+
+Handles the UI, session state, background artifact generation, 
+and streaming LLM responses with interleaved visual generation.
+"""
+
 import base64
+import datetime
 import hashlib
 import html
 import logging
@@ -7,9 +16,10 @@ import pathlib
 import re
 import threading
 import time
+import uuid
 from copy import deepcopy
 from functools import lru_cache
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Optional, Tuple, Set
 
 import gradio as gr
 from dotenv import load_dotenv
@@ -32,14 +42,15 @@ from lib.storybook_generator import (
     generate_pixel_art_illustration,
 )
 
+# Initialize environment and logging
 load_dotenv()
-
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# =====================================================================
+# CONSTANTS & CONFIGURATION
+# =====================================================================
 APP_TITLE = "ArcMotivate"
-
-# Global GCS Bucket Name for all caching
 CACHE_BUCKET_NAME = os.environ.get("CACHE_BUCKET_NAME")
 
 FALLBACK_OPENING_MSG = (
@@ -57,8 +68,19 @@ MAX_INLINE_VISUAL_MARKERS = 1
 SESSION_TTL_SEC = 60 * 60
 MAX_PENDING_ARTIFACT_JOBS = 5
 
+# Pre-compiled Regex for performance
+_RE_VISUALIZE = re.compile(r"\[VISUALIZE:\s*(.+?)\]", re.DOTALL)
+_RE_SKILL = re.compile(r"\[SKILL:\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\]", re.DOTALL)
+_RE_HTML_IMG = re.compile(r"<img[^>]*>", re.IGNORECASE)
+_RE_HTML_DIV = re.compile(r"<div[^>]*>.*?</div>", re.DOTALL | re.IGNORECASE)
+
+# =====================================================================
+# CSS STYLES
+# =====================================================================
 css = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@600;700&family=Press+Start+2P&display=swap');
+
+#hidden_btn { display: none !important; }
 
 :root{
   --bg-0:#05030b;--bg-1:#0a0314;--bg-2:#15092a;--surface:rgba(20,10,40,.9);
@@ -344,44 +366,44 @@ body,.gradio-container{
 }
 """
 
-_RE_VISUALIZE = re.compile(r"\[VISUALIZE:\s*(.+?)\]", re.DOTALL)
-_RE_SKILL = re.compile(r"\[SKILL:\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\]", re.DOTALL)
-_RE_HTML_IMG = re.compile(r"<img[^>]*>", re.IGNORECASE)
-_RE_HTML_DIV = re.compile(r"<div[^>]*>.*?</div>", re.DOTALL | re.IGNORECASE)
-
+# =====================================================================
+# SESSION MANAGEMENT
+# =====================================================================
 SESSION_STORES: Dict[str, Dict[str, Any]] = {}
 SESSION_STORES_LOCK = threading.Lock()
 
-
 def default_session_store() -> Dict[str, Any]:
+    """Returns a fresh session state dictionary."""
     return {
-        "pending_image": None,
+        "history": [], 
+        "pending_turns": [], # QUEUE: Tracks indices of user messages waiting for a reply
         "superpowers": {},
-        "tiles":[],
+        "tiles": [],
         "chat_turn_count": 0,
         "tile_count": 0,
         "avatar_b64": "",
         "recap": "",
-        "comic_panels":[],
+        "comic_panels": [],
         "postcard": {},
         "last_canvas_error": None,
         "last_identity_error": None,
-        "artifact_jobs":[],
+        "artifact_jobs": [],
         "artifact_running": False,
         "artifact_stage": "",
         "artifact_updated_at": 0.0,
         "last_seen_at": time.time(),
         "lock": threading.Lock(),
+        "gen_lock": threading.Lock(),
     }
 
-
 def _session_id_from_request(request: Optional[gr.Request]) -> str:
+    """Extracts a unique session ID from the Gradio request."""
     if request and getattr(request, "session_hash", None):
         return str(request.session_hash)
     return "global"
 
-
 def _cleanup_stale_sessions() -> None:
+    """Removes sessions that have exceeded the TTL to free memory."""
     now = time.time()
     stale_ids: List[str] =[]
     with SESSION_STORES_LOCK:
@@ -393,8 +415,8 @@ def _cleanup_stale_sessions() -> None:
         for session_id in stale_ids:
             SESSION_STORES.pop(session_id, None)
 
-
 def get_session_store(request: Optional[gr.Request]) -> Dict[str, Any]:
+    """Retrieves or creates a session store for the current user."""
     _cleanup_stale_sessions()
     session_id = _session_id_from_request(request)
     with SESSION_STORES_LOCK:
@@ -403,12 +425,15 @@ def get_session_store(request: Optional[gr.Request]) -> Dict[str, Any]:
         SESSION_STORES[session_id]["last_seen_at"] = time.time()
         return SESSION_STORES[session_id]
 
-
+# =====================================================================
+# TEXT & HTML UTILITIES
+# =====================================================================
 def safe_text(value: Any) -> str:
+    """Escapes HTML characters to prevent XSS."""
     return html.escape(str(value or ""))
 
-
 def extract_text(content: Any) -> str:
+    """Extracts plain text from Gradio's multimodal message format."""
     if isinstance(content, str):
         return content.strip()
     if isinstance(content, list):
@@ -418,10 +443,11 @@ def extract_text(content: Any) -> str:
                 texts.append(str(part["text"]))
             elif isinstance(part, str):
                 texts.append(part)
-        return " ".join(texts).strip()  # <--- Fixed!
+        return " ".join(texts).strip()
     return str(content or "").strip()
 
 def _extract_file_path(file_obj: Any) -> Optional[str]:
+    """Safely extracts the file path from Gradio's file object."""
     if file_obj is None:
         return None
     if isinstance(file_obj, str):
@@ -430,8 +456,8 @@ def _extract_file_path(file_obj: Any) -> Optional[str]:
         return file_obj.get("path") or file_obj.get("name")
     return getattr(file_obj, "path", None) or getattr(file_obj, "name", None)
 
-
 def clean_message_for_backend(content: Any) -> str:
+    """Strips HTML and internal markers before sending to the LLM."""
     text = extract_text(content)
     if not text:
         return ""
@@ -442,11 +468,11 @@ def clean_message_for_backend(content: Any) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
-
 def build_backend_history(
     history: List[Dict[str, Any]],
     max_messages: int,
 ) -> List[Dict[str, str]]:
+    """Formats the Gradio history into the format expected by the LLM."""
     backend_history: List[Dict[str, str]] = []
     for msg in history[-max_messages:]:
         clean_content = clean_message_for_backend(msg.get("content", ""))
@@ -456,8 +482,8 @@ def build_backend_history(
         backend_history.append({"role": role, "text": clean_content})
     return backend_history
 
-
 def extract_tool_json_and_display_text(accumulated_text: str) -> Tuple[str, Optional[str], bool]:
+    """Parses out internal JSON tool calls from the LLM's raw text stream."""
     match = re.search(r'\{\s*"action"\s*:\s*"dalle', accumulated_text, flags=re.DOTALL)
     if not match:
         return accumulated_text.strip(), None, False
@@ -491,33 +517,34 @@ def extract_tool_json_and_display_text(accumulated_text: str) -> Tuple[str, Opti
 
     return display_text, recovered_prompt, False
 
+def _get_gradio_history(store: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Safely strips internal metadata (like images/ids) before sending history to the UI."""
+    return [{"role": m["role"], "content": m["content"]} for m in store["history"]]
 
 # =====================================================================
 # DISTRIBUTED GENERATIVE ASSET POOL (4-Tier Image Cache)
 # =====================================================================
 @lru_cache(maxsize=96)
 def cached_pixel_art(prompt: str) -> Optional[str]:
+    """Generates or retrieves a cached image based on the prompt."""
     prompt = (prompt or "").strip()
     if not prompt:
         return None
         
-    # 1. Create a unique, safe filename based on the prompt text
     prompt_hash = hashlib.md5(prompt.lower().encode('utf-8')).hexdigest()
     blob_filename = f"img_cache_{prompt_hash}.txt"
     tmp_file = f"/tmp/{blob_filename}"
 
-    # 2. Tier 2 Cache: Check local container disk (/tmp)
     if os.path.exists(tmp_file):
         try:
             with open(tmp_file, "r", encoding="utf-8") as f:
                 content = f.read().strip()
                 if content:
-                    logger.info(f"Image loaded from local /tmp cache! ({prompt_hash})")
+                    logger.info("Image loaded from local /tmp cache! (%s)", prompt_hash)
                     return content
         except Exception as e:
             logger.warning("Failed to read image from /tmp: %s", e)
 
-    # 3. Tier 3 Cache: Check Google Cloud Storage Blob (Cross-Container)
     if GCS_AVAILABLE and CACHE_BUCKET_NAME:
         try:
             client = storage.Client()
@@ -525,26 +552,22 @@ def cached_pixel_art(prompt: str) -> Optional[str]:
             blob = bucket.blob(f"images/{blob_filename}")
             
             if blob.exists():
-                logger.info(f"Image loaded from GCS Blob cache! ({prompt_hash})")
+                logger.info("Image loaded from GCS Blob cache! (%s)", prompt_hash)
                 b64_data = blob.download_as_text()
                 
-                # Save to local /tmp so the next request on this container is even faster
                 with open(tmp_file, "w", encoding="utf-8") as f:
                     f.write(b64_data)
                 return b64_data
         except Exception as e:
             logger.warning("Failed to read image from GCS Blob: %s", e)
 
-    # 4. Fallback: Generate the image from scratch (Expensive API Call)
-    logger.info(f"Generating new image via API... ({prompt_hash})")
+    logger.info("Generating new image via API... (%s)", prompt_hash)
     try:
         b64_data = generate_pixel_art_illustration(prompt)
         if b64_data:
-            # Save to local /tmp
             with open(tmp_file, "w", encoding="utf-8") as f:
                 f.write(b64_data)
                 
-            # Upload to GCS Blob to expand the global library
             if GCS_AVAILABLE and CACHE_BUCKET_NAME:
                 try:
                     client = storage.Client()
@@ -556,23 +579,23 @@ def cached_pixel_art(prompt: str) -> Optional[str]:
                     logger.warning("Failed to upload image to GCS Blob: %s", e)
                     
             return b64_data
-    except Exception:
-        logger.exception("Image generation failed")
+    except Exception as e:
+        logger.exception("Image generation failed: %s", e)
         
     return None
 
-
 def maybe_generate_inline_visual(prompt: Optional[str]) -> Optional[str]:
+    """Wrapper to safely attempt inline visual generation."""
     if not prompt:
         return None
     try:
         return cached_pixel_art(prompt)
-    except Exception:
-        logger.exception("Inline image generation failed")
+    except Exception as e:
+        logger.exception("Inline image generation failed: %s", e)
         return None
 
-
 def format_inline_images(image_b64_list: List[str]) -> str:
+    """Formats a list of base64 images into an HTML grid."""
     if not image_b64_list:
         return ""
     tags =[]
@@ -581,8 +604,8 @@ def format_inline_images(image_b64_list: List[str]) -> str:
         tags.append(f"<img src='data:image/png;base64,{safe_b64}' alt='arc visual'>")
     return f"<div class='chat-comic-grid'>{''.join(tags)}</div>"
 
-
 def format_skill_card(name: str, url: str, try_this: str) -> str:
+    """Formats a skill recommendation into an HTML card."""
     s_name = safe_text(name.strip())
     s_url = html.escape(url.strip(), quote=True)
     s_try = safe_text(try_this.strip())
@@ -598,6 +621,7 @@ def format_skill_card(name: str, url: str, try_this: str) -> str:
     )
 
 def format_inline_visual_html(image_b64: str) -> str:
+    """Formats a single base64 image into a cinematic inline visual."""
     safe_b64 = html.escape(image_b64, quote=True)
     return (
         f"<div class='chat-inline-visual'>"
@@ -607,6 +631,7 @@ def format_inline_visual_html(image_b64: str) -> str:
 
 def render_interleaved_content(raw_text: str, visual_state: str = "rendered") -> str:
     """
+    Parses custom tags (e.g., [VISUALIZE: ...]) and replaces them with HTML.
     visual_state can be:
     - "hidden": Strips the visual tags entirely.
     - "loading": Replaces the tag with a glowing placeholder box.
@@ -660,80 +685,94 @@ def render_interleaved_content(raw_text: str, visual_state: str = "rendered") ->
 
     return "\n\n".join(parts)
 
-
 # =====================================================================
-# MULTI-CONTAINER BLOB CACHING FOR RENDERED INTRO MESSAGE
+# MULTI-CONTAINER BLOB CACHING FOR RENDERED INTRO MESSAGE (DAILY ROTATION)
 # =====================================================================
-BLOB_FILENAME = "arc_intro_rendered.txt"
-TMP_INTRO_FILE = f"/tmp/{BLOB_FILENAME}"
-
 _intro_lock = threading.Lock()
-_MEM_CACHE_INTRO = None
+_MEM_CACHE_INTRO: Optional[str] = None
+_MEM_CACHE_DATE: Optional[str] = None
 
 def get_rendered_opening_message() -> str:
-    global _MEM_CACHE_INTRO
+    """Generates or retrieves the daily rotating intro message."""
+    global _MEM_CACHE_INTRO, _MEM_CACHE_DATE
 
-    if _MEM_CACHE_INTRO:
+    today_str = datetime.date.today().isoformat()
+    blob_filename = f"arc_intro_rendered_{today_str}.txt"
+    tmp_intro_file = f"/tmp/{blob_filename}"
+
+    if _MEM_CACHE_INTRO and _MEM_CACHE_DATE == today_str:
         return _MEM_CACHE_INTRO
 
-    if os.path.exists(TMP_INTRO_FILE):
+    if os.path.exists(tmp_intro_file):
         try:
-            with open(TMP_INTRO_FILE, "r", encoding="utf-8") as f:
+            with open(tmp_intro_file, "r", encoding="utf-8") as f:
                 content = f.read().strip()
                 if content:
                     _MEM_CACHE_INTRO = content
+                    _MEM_CACHE_DATE = today_str
                     return content
         except Exception as e:
             logger.warning("Failed to read intro from local /tmp: %s", e)
 
     with _intro_lock:
-        if os.path.exists(TMP_INTRO_FILE):
-            with open(TMP_INTRO_FILE, "r", encoding="utf-8") as f:
+        if os.path.exists(tmp_intro_file):
+            with open(tmp_intro_file, "r", encoding="utf-8") as f:
                 _MEM_CACHE_INTRO = f.read().strip()
+                _MEM_CACHE_DATE = today_str
                 return _MEM_CACHE_INTRO
 
         if GCS_AVAILABLE and CACHE_BUCKET_NAME:
             try:
                 client = storage.Client()
                 bucket = client.bucket(CACHE_BUCKET_NAME)
-                blob = bucket.blob(BLOB_FILENAME)
+                blob = bucket.blob(blob_filename)
                 
                 if blob.exists():
-                    logger.info("Downloading cached intro message from GCS Blob...")
+                    logger.info("Downloading today's cached intro message from GCS Blob...")
                     content = blob.download_as_text()
-                    with open(TMP_INTRO_FILE, "w", encoding="utf-8") as f:
+                    with open(tmp_intro_file, "w", encoding="utf-8") as f:
                         f.write(content)
                     _MEM_CACHE_INTRO = content
+                    _MEM_CACHE_DATE = today_str
                     return content
             except Exception as e:
                 logger.warning("Failed to read from GCS Blob: %s", e)
 
-        try:
-            logger.info("Generating new intro message via LLM...")
-            raw_msg = generate_intro_message()
-            if raw_msg:
-                rendered_msg = render_interleaved_content(raw_msg, visual_state="rendered")
-                with open(TMP_INTRO_FILE, "w", encoding="utf-8") as f:
-                    f.write(rendered_msg)
-                if GCS_AVAILABLE and CACHE_BUCKET_NAME:
-                    try:
-                        logger.info("Uploading newly generated intro to GCS Blob...")
-                        client = storage.Client()
-                        bucket = client.bucket(CACHE_BUCKET_NAME)
-                        blob = bucket.blob(BLOB_FILENAME)
-                        blob.upload_from_string(rendered_msg, content_type="text/html")
-                    except Exception as e:
-                        logger.warning("Failed to upload to GCS Blob: %s", e)
-
-                _MEM_CACHE_INTRO = rendered_msg
-                return rendered_msg
-        except Exception:
-            logger.exception("Failed to generate opening message")
+    try:
+        logger.info("Generating new intro message for %s via LLM...", today_str)
+        raw_msg = generate_intro_message()
+        
+        if raw_msg:
+            rendered_msg = render_interleaved_content(raw_msg, visual_state="rendered")
             
+            with _intro_lock:
+                with open(tmp_intro_file, "w", encoding="utf-8") as f:
+                    f.write(rendered_msg)
+                _MEM_CACHE_INTRO = rendered_msg
+                _MEM_CACHE_DATE = today_str
+                
+            if GCS_AVAILABLE and CACHE_BUCKET_NAME:
+                try:
+                    logger.info("Uploading today's new intro to GCS Blob...")
+                    client = storage.Client()
+                    bucket = client.bucket(CACHE_BUCKET_NAME)
+                    blob = bucket.blob(blob_filename)
+                    blob.upload_from_string(rendered_msg, content_type="text/html")
+                except Exception as e:
+                    logger.warning("Failed to upload to GCS Blob: %s", e)
+
+            return rendered_msg
+            
+    except Exception as e:
+        logger.exception("Failed to generate opening message: %s", e)
+        
     return render_interleaved_content(FALLBACK_OPENING_MSG, visual_state="rendered")
 
-
+# =====================================================================
+# UI RENDERING FUNCTIONS
+# =====================================================================
 def get_header_status_html(store: Dict[str, Any], busy: bool = False, stage: str = "") -> str:
+    """Generates the HTML for the top status bar."""
     with store["lock"]:
         turn_count = int(store.get("chat_turn_count", 0))
         tiles_count = len(store.get("tiles",[]))
@@ -761,8 +800,8 @@ def get_header_status_html(store: Dict[str, Any], busy: bool = False, stage: str
     </div>
     """
 
-
 def format_canvas(store: Dict[str, Any]) -> str:
+    """Generates the HTML for the Workspace Canvas tab."""
     with store["lock"]:
         tiles = deepcopy(store.get("tiles",[]))
         error_text = str(store.get("last_canvas_error") or "")
@@ -842,8 +881,8 @@ def format_canvas(store: Dict[str, Any]) -> str:
 
     return "".join(html_parts)
 
-
 def render_identity_lab(store: Dict[str, Any]) -> str:
+    """Generates the HTML for the Story tab."""
     with store["lock"]:
         avatar_b64 = store.get("avatar_b64", "")
         recap = store.get("recap", "")
@@ -898,7 +937,7 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
         """)
 
     if comic_panels:
-        panel_html_parts: List[str] =[]
+        panel_html_parts: List[str] = []
         for panel in comic_panels[:3]:
             img_b64 = panel.get("image_b64", "")
             caption = safe_text(panel.get("caption", ""))
@@ -947,8 +986,11 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
 
     return f"<div class='story-card'><div class='story-card-title'>Your Exploration Story</div>{''.join(sections)}</div>"
 
-
+# =====================================================================
+# BACKGROUND ARTIFACT GENERATION
+# =====================================================================
 def plan_artifacts(store: Dict[str, Any]) -> List[str]:
+    """Determines which artifacts need to be generated based on turn count."""
     with store["lock"]:
         turn = int(store.get("chat_turn_count", 0))
         avatar_missing = not bool(store.get("avatar_b64"))
@@ -956,13 +998,13 @@ def plan_artifacts(store: Dict[str, Any]) -> List[str]:
         postcard_missing = not bool(store.get("postcard"))
 
     if turn == 1:
-        jobs =["tile", "recap"]
+        jobs = ["tile", "recap"]
         if avatar_missing:
             jobs.append("avatar")
         return jobs
 
     if turn == 2:
-        jobs =["tile", "recap"]
+        jobs = ["tile", "recap"]
         if avatar_missing:
             jobs.append("avatar")
         jobs.append("comic")
@@ -979,22 +1021,34 @@ def plan_artifacts(store: Dict[str, Any]) -> List[str]:
         jobs.append("postcard")
     return jobs
 
-
 def enqueue_artifact_jobs(
     store: Dict[str, Any],
     jobs: List[str],
     history: List[Dict[str, Any]],
     latest_signal: str,
 ) -> None:
+    """Adds artifact generation jobs to the background queue with strict language enforcement."""
     if not jobs:
         return
 
     history_chat = build_backend_history(history, MAX_CHAT_CONTEXT_MESSAGES)
     history_tile = build_backend_history(history, MAX_TILE_HISTORY_MESSAGES)
 
+    language_directive = (
+        "[SYSTEM DIRECTIVE: Analyze the chat history above. You MUST generate all "
+        "titles, descriptions, captions, and text for this artifact in the EXACT SAME "
+        "LANGUAGE that the user is speaking. Do not default to English unless the user is speaking English. "
+        "HOWEVER, any 'image_prompt' or visual generation instructions MUST be written in English.]"
+    )
+    
+    localized_signal = f"{latest_signal}\n\n{language_directive}"
+
+    history_chat.append({"role": "user", "text": language_directive})
+    history_tile.append({"role": "user", "text": language_directive})
+
     with store["lock"]:
         superpowers = deepcopy(store.get("superpowers", {}))
-        queued_kinds = {job.get("kind") for job in store["artifact_jobs"]}
+        queued_kinds: Set[str] = {job.get("kind") for job in store["artifact_jobs"]}
 
         for kind in jobs:
             if kind in queued_kinds:
@@ -1008,7 +1062,7 @@ def enqueue_artifact_jobs(
                     "superpowers": deepcopy(superpowers),
                     "history_chat": deepcopy(history_chat),
                     "history_tile": deepcopy(history_tile),
-                    "latest_signal": latest_signal,
+                    "latest_signal": localized_signal,
                     "queued_at": time.time(),
                 }
             )
@@ -1022,8 +1076,8 @@ def enqueue_artifact_jobs(
     if should_start:
         threading.Thread(target=artifact_worker, args=(store,), daemon=True).start()
 
-
 def artifact_worker(store: Dict[str, Any]) -> None:
+    """Background thread worker that processes the artifact queue."""
     while True:
         with store["lock"]:
             if not store["artifact_jobs"]:
@@ -1053,8 +1107,8 @@ def artifact_worker(store: Dict[str, Any]) -> None:
                     if image_prompt:
                         try:
                             tile["image_b64"] = cached_pixel_art(image_prompt)
-                        except Exception:
-                            logger.exception("Tile art error")
+                        except Exception as e:
+                            logger.exception("Tile art error: %s", e)
                             tile["image_b64"] = None
                     with store["lock"]:
                         store["tiles"].append(tile)
@@ -1103,8 +1157,8 @@ def artifact_worker(store: Dict[str, Any]) -> None:
                     store["last_identity_error"] = None
                     store["artifact_updated_at"] = time.time()
 
-        except Exception:
-            logger.exception("Artifact job failed: %s", kind)
+        except Exception as e:
+            logger.exception("Artifact job failed (%s): %s", kind, e)
             with store["lock"]:
                 if kind == "tile":
                     store["last_canvas_error"] = "Workspace artifact generation failed."
@@ -1112,24 +1166,26 @@ def artifact_worker(store: Dict[str, Any]) -> None:
                     store["last_identity_error"] = f"{kind.capitalize()} generation failed."
                 store["artifact_updated_at"] = time.time()
 
-
+# =====================================================================
+# GRADIO EVENT HANDLERS
+# =====================================================================
 def user_submit(
     user_message: Any,
-    history: Optional[List[Dict[str, Any]]],
     request: gr.Request,
-):
-    history = history or[]
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]], str]:
+    """Handles the immediate UI update when a user submits a message."""
     store = get_session_store(request)
 
     if isinstance(user_message, dict):
         text = (user_message.get("text") or "").strip()
-        files = user_message.get("files") or[]
+        files = user_message.get("files") or []
     else:
         text = str(user_message or "").strip()
-        files =[]
+        files = []
 
     if not text and not files:
-        return gr.update(value={"text": "", "files":[]}), history
+        with store["lock"]:
+            return gr.update(value={"text": "", "files": []}), _get_gradio_history(store), get_header_status_html(store)
 
     pending_image = None
     if files:
@@ -1147,166 +1203,205 @@ def user_submit(
                     "gif": "image/gif",
                 }.get(ext, "image/jpeg")
                 pending_image = {"bytes": img_bytes, "mime": mime}
-        except Exception:
-            logger.exception("Image read error")
+        except Exception as e:
+            logger.exception("Image read error: %s", e)
             pending_image = None
 
-    with store["lock"]:
-        store["pending_image"] = pending_image
-        store["last_seen_at"] = time.time()
-
     display_content = text or "📎 [image attached]"
-    history.append({"role": "user", "content": display_content})
-    return gr.update(value={"text": "", "files":[]}), history
-
+    
+    with store["lock"]:
+        # 1. Create a unique message object that holds its own image payload
+        msg = {
+            "id": uuid.uuid4().hex,
+            "role": "user",
+            "content": display_content,
+            "image": pending_image,
+        }
+        store["history"].append(msg)
+        
+        # 2. Add this specific message's index to the processing queue
+        store["pending_turns"].append(len(store["history"]) - 1)
+        store["last_seen_at"] = time.time()
+        
+        is_busy = store["gen_lock"].locked()
+        
+    stage = "Message queued..." if is_busy else "Message received..."
+    status_html = get_header_status_html(store, busy=True, stage=stage)
+        
+    return gr.update(value={"text": "", "files": []}), _get_gradio_history(store), status_html
 
 def run_turn(
-    history: List[Dict[str, Any]],
     request: gr.Request,
-) -> Generator[Tuple[Any, Any, Any, Any, Any], None, None]:
+) -> Generator[Tuple[List[Dict[str, Any]], str, str, str], None, None]:
+    """Main generator that pops a message from the queue and processes it."""
     store = get_session_store(request)
 
-    if not history:
-        yield (
-            gr.update(interactive=True),
-            history,
-            format_canvas(store),
-            render_identity_lab(store),
-            get_header_status_html(store),
-        )
-        return
-
-    latest_user_input = clean_message_for_backend(history[-1].get("content", ""))
-
-    with store["lock"]:
-        store["chat_turn_count"] = int(store.get("chat_turn_count", 0)) + 1
-        store["last_seen_at"] = time.time()
-        pending = deepcopy(store.get("pending_image"))
-        has_superpowers = bool(store.get("superpowers"))
-
-    if not has_superpowers:
-        try:
-            mapped = map_narrative_to_superpowers(
-                latest_user_input,
-                (pending or {}).get("bytes"),
-                (pending or {}).get("mime", "image/jpeg"),
-            ) or {}
-        except Exception:
-            logger.exception("Superpower mapping error")
-            mapped = {}
+    with store["gen_lock"]:
         with store["lock"]:
-            store["superpowers"] = mapped
-            store["last_seen_at"] = time.time()
-
-    history.append({"role": "assistant", "content": ""})
-    yield (
-        gr.update(interactive=False),
-        history,
-        format_canvas(store),
-        render_identity_lab(store),
-        get_header_status_html(store, busy=True, stage="Listening, reasoning, and composing..."),
-    )
-
-    backend_history = build_backend_history(history[:-1], MAX_CHAT_CONTEXT_MESSAGES)
-
-    with store["lock"]:
-        pending = deepcopy(store.get("pending_image"))
-        store["pending_image"] = None
-        superpowers = deepcopy(store.get("superpowers", {}))
-
-    accumulated_text = ""
-    inline_images: List[str] =[]
-    last_ui_flush = 0.0
-
-    try:
-        stream = generate_socratic_stream(
-            superpowers,
-            backend_history,
-            (pending or {}).get("bytes"),
-            (pending or {}).get("mime", "image/jpeg"),
-        )
-    except Exception:
-        logger.exception("Stream setup error")
-        history[-1]["content"] = "⚠️ Something glitched while starting the simulation."
-        yield (
-            gr.update(interactive=True),
-            history,
-            format_canvas(store),
-            render_identity_lab(store),
-            get_header_status_html(store),
-        )
-        return
-
-    for chunk in stream:
-        chunk_type = chunk.get("type")
-
-        if chunk_type == "text":
-            accumulated_text += str(chunk.get("data", ""))
-            display_text, _, _ = extract_tool_json_and_display_text(accumulated_text)
-
-            now = time.monotonic()
-            if (now - last_ui_flush) >= STREAM_UPDATE_INTERVAL_SEC:
-                preview = display_text or "🧠 *Thinking...*"
-                # Use loading state for visuals during stream
-                preview_html = render_interleaved_content(preview, visual_state="loading")
-                history[-1]["content"] = preview_html
+            if not store["history"]:
+                store["history"] = [{"role": "assistant", "content": get_rendered_opening_message()}]
+                
+            if not store["pending_turns"]:
                 yield (
-                    gr.update(interactive=False),
-                    history,
+                    _get_gradio_history(store),
                     format_canvas(store),
                     render_identity_lab(store),
-                    get_header_status_html(store, busy=True, stage="Generating reply..."),
+                    get_header_status_html(store),
                 )
-                last_ui_flush = now
+                return
 
-        elif chunk_type == "image":
-            image_b64 = chunk.get("data")
-            if image_b64 and len(inline_images) < MAX_INLINE_IMAGES_PER_TURN:
-                inline_images.append(image_b64)
+            # 3. Pop the exact user message we are supposed to process
+            user_index = store["pending_turns"].pop(0)
 
-    final_text, _, _ = extract_tool_json_and_display_text(accumulated_text)
-    if not final_text:
-        final_text = "…"
+            if user_index >= len(store["history"]):
+                return 
 
-    # 1. Yield final text with a loading visual placeholder (Non-blocking UX)
-    interleaved_html_loading = render_interleaved_content(final_text, visual_state="loading")
-    if inline_images:
-        interleaved_html_loading += "\n\n" + format_inline_images(inline_images)
+            user_msg = store["history"][user_index]
+            if user_msg.get("role") != "user":
+                return
 
-    history[-1]["content"] = interleaved_html_loading
-    yield (
-        gr.update(interactive=True), # Let user type while image generates!
-        history,
-        format_canvas(store),
-        render_identity_lab(store),
-        get_header_status_html(store, busy=True, stage="Painting visual..."),
-    )
+            latest_user_input = clean_message_for_backend(user_msg.get("content", ""))
+            pending = deepcopy(user_msg.get("image"))
+            has_superpowers = bool(store.get("superpowers"))
 
-    # 2. Generate image synchronously (blocks this generator, but UI is interactive)
-    interleaved_html_final = render_interleaved_content(final_text, visual_state="rendered")
-    if inline_images:
-        interleaved_html_final += "\n\n" + format_inline_images(inline_images)
+            store["chat_turn_count"] = int(store.get("chat_turn_count", 0)) + 1
+            store["last_seen_at"] = time.time()
 
-    history[-1]["content"] = interleaved_html_final
+            # 4. Insert the assistant reply directly after THIS user message
+            msg_index = user_index + 1
+            store["history"].insert(msg_index, {"role": "assistant", "content": "⏳ *Thinking...*"})
 
-    jobs = plan_artifacts(store)
-    enqueue_artifact_jobs(store, jobs, history, latest_user_input)
+            # 5. Shift any pending indices that come after the insertion point
+            store["pending_turns"] = [
+                idx + 1 if idx > user_index else idx
+                for idx in store["pending_turns"]
+            ]
 
-    yield (
-        gr.update(interactive=True),
-        history,
-        format_canvas(store),
-        render_identity_lab(store),
-        get_header_status_html(store, busy=True, stage="Reply complete. Building artifacts..."),
-    )
+        yield (
+            _get_gradio_history(store),
+            format_canvas(store),
+            render_identity_lab(store),
+            get_header_status_html(store, busy=True, stage="Listening, reasoning, and composing..."),
+        )
 
+        if not has_superpowers:
+            try:
+                mapped = map_narrative_to_superpowers(
+                    latest_user_input,
+                    (pending or {}).get("bytes"),
+                    (pending or {}).get("mime", "image/jpeg"),
+                ) or {}
+            except Exception as e:
+                logger.exception("Superpower mapping error: %s", e)
+                mapped = {}
+            with store["lock"]:
+                store["superpowers"] = mapped
+                store["last_seen_at"] = time.time()
 
-def handle_startup_load():
+        with store["lock"]:
+            # 6. Build history ONLY up to the message we are responding to
+            backend_history = build_backend_history(store["history"][:msg_index], MAX_CHAT_CONTEXT_MESSAGES)
+            superpowers = deepcopy(store.get("superpowers", {}))
+
+        accumulated_text = ""
+        inline_images: List[str] = []
+        last_ui_flush = 0.0
+
+        try:
+            stream = generate_socratic_stream(
+                superpowers,
+                backend_history,
+                (pending or {}).get("bytes"),
+                (pending or {}).get("mime", "image/jpeg"),
+            )
+        except Exception as e:
+            logger.exception("Stream setup error: %s", e)
+            with store["lock"]:
+                store["history"][msg_index]["content"] = "⚠️ Something glitched while starting the simulation."
+            yield (
+                _get_gradio_history(store),
+                format_canvas(store),
+                render_identity_lab(store),
+                get_header_status_html(store),
+            )
+            return
+
+        for chunk in stream:
+            chunk_type = chunk.get("type")
+
+            if chunk_type == "text":
+                accumulated_text += str(chunk.get("data", ""))
+                display_text, _, _ = extract_tool_json_and_display_text(accumulated_text)
+
+                now = time.monotonic()
+                if (now - last_ui_flush) >= STREAM_UPDATE_INTERVAL_SEC:
+                    preview = display_text or "🧠 *Thinking...*"
+                    preview_html = render_interleaved_content(preview, visual_state="loading")
+                    with store["lock"]:
+                        store["history"][msg_index]["content"] = preview_html
+                    yield (
+                        _get_gradio_history(store),
+                        format_canvas(store),
+                        render_identity_lab(store),
+                        get_header_status_html(store, busy=True, stage="Generating reply..."),
+                    )
+                    last_ui_flush = now
+
+            elif chunk_type == "image":
+                image_b64 = chunk.get("data")
+                if image_b64 and len(inline_images) < MAX_INLINE_IMAGES_PER_TURN:
+                    inline_images.append(image_b64)
+
+        final_text, _, _ = extract_tool_json_and_display_text(accumulated_text)
+        if not final_text:
+            final_text = "…"
+
+        interleaved_html_loading = render_interleaved_content(final_text, visual_state="loading")
+        if inline_images:
+            interleaved_html_loading += "\n\n" + format_inline_images(inline_images)
+
+        with store["lock"]:
+            store["history"][msg_index]["content"] = interleaved_html_loading
+
+        yield (
+            _get_gradio_history(store),
+            format_canvas(store),
+            render_identity_lab(store),
+            get_header_status_html(store, busy=True, stage="Painting visual..."),
+        )
+
+        interleaved_html_final = render_interleaved_content(final_text, visual_state="rendered")
+        if inline_images:
+            interleaved_html_final += "\n\n" + format_inline_images(inline_images)
+
+        with store["lock"]:
+            store["history"][msg_index]["content"] = interleaved_html_final
+
+        jobs = plan_artifacts(store)
+        enqueue_artifact_jobs(store, jobs, store["history"][:msg_index+1], latest_user_input)
+
+        yield (
+            _get_gradio_history(store),
+            format_canvas(store),
+            render_identity_lab(store),
+            get_header_status_html(store, busy=True, stage="Reply complete. Building artifacts..."),
+        )
+
+def handle_startup_load(request: gr.Request) -> List[Dict[str, str]]:
     """Generates the fresh opening message lazily on first load."""
+    session_id = _session_id_from_request(request)
+    
+    with SESSION_STORES_LOCK:
+        SESSION_STORES[session_id] = default_session_store()
+        store = SESSION_STORES[session_id]
+        
     rendered_msg = get_rendered_opening_message()
-    return[{"role": "assistant", "content": rendered_msg}]
+    with store["lock"]:
+        store["history"] = [{"role": "assistant", "content": rendered_msg}]
+        return _get_gradio_history(store)
 
-def refresh_panels(request: gr.Request):
+def refresh_panels(request: gr.Request) -> Tuple[str, str, str]:
+    """Refreshes the side panels manually."""
     store = get_session_store(request)
     return (
         format_canvas(store),
@@ -1314,7 +1409,9 @@ def refresh_panels(request: gr.Request):
         get_header_status_html(store),
     )
 
-
+# =====================================================================
+# GRADIO UI LAYOUT
+# =====================================================================
 with gr.Blocks(title=APP_TITLE) as demo:
     gr.HTML(
         """
@@ -1359,15 +1456,38 @@ with gr.Blocks(title=APP_TITLE) as demo:
 
     refresh_btn = gr.Button("Refresh story + workspace")
 
+    hidden_btn = gr.Button("Hidden", elem_id="hidden_btn")
+
     submit_event = msg_input.submit(
-        user_submit,[msg_input, chatbot],
-        [msg_input, chatbot],
-        queue=False,
+        user_submit, 
+        inputs=[msg_input], 
+        outputs=[msg_input, chatbot, header_status],
+        queue=False, 
     )
 
     submit_event.then(
-        run_turn,[chatbot],[msg_input, chatbot, canvas_output, identity_output, header_status],
-        concurrency_limit=1,
+        fn=None, 
+        inputs=None, 
+        outputs=None, 
+        js="""
+        () => {
+            setTimeout(() => {
+                const el = document.getElementById('hidden_btn');
+                if (el) {
+                    const btn = el.tagName.toLowerCase() === 'button' ? el : el.querySelector('button');
+                    if (btn) btn.click();
+                }
+            }, 50);
+        }
+        """
+    )
+
+    # 7. The Magic Bullet: trigger_mode="multiple" ensures no clicks are dropped!
+    hidden_btn.click(
+        run_turn, 
+        inputs=None, 
+        outputs=[chatbot, canvas_output, identity_output, header_status],
+        trigger_mode="multiple", 
     )
 
     refresh_btn.click(
@@ -1377,7 +1497,6 @@ with gr.Blocks(title=APP_TITLE) as demo:
     )
 
     demo.queue(default_concurrency_limit=8)
-
     demo.load(handle_startup_load, outputs=chatbot)
 
 if __name__ == "__main__":
