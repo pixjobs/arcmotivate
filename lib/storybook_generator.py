@@ -140,35 +140,137 @@ Recent conversation (CRITICAL - Anchor the story to these specific details):
 # HERO RECAP
 # ============================================================
 
-def generate_hero_recap(user_profile: Dict[str, Any]) -> str:
-    """Generates a short, punchy storybook recap based on the user's profile."""
+def generate_hero_story(
+    user_profile: Dict[str, Any],
+    recent_chat: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Generates a creative storybook narrative + 3 safe resource links grounded in
+    the user's actual conversation. Returns a dict with these keys:
+      - narrative: str  (3-4 punchy sentences, storybook chapter opener style)
+      - links: list of [{label, description, url}]  (always safe Google Search URLs)
+    """
     client = get_client()
 
+    context = _story_context_block(user_profile, recent_chat)
+
     prompt = f"""
-You are ArcMotivate. Write a short, punchy storybook recap for a young person.
+You are ArcMotivate. Create a short, exciting storybook entry for a young person.
 
-{_story_context_block(user_profile)}
+{context}
 
-Requirements:
-- Maximum 2 sentences.
-- Be highly specific to their actual interests. Do not use generic templates.
-- Name a real pattern emerging in how they think or work.
-- Do not use career brochure language or sound like a therapist.
-- MUST BE WRITTEN IN ENGLISH.
+Your output must be JSON with exactly 2 keys:
+
+1. "narrative": 3-4 short punchy sentences written like a storybook chapter opener.
+   - Ground EVERY sentence in a specific detail from their recent conversation above.
+   - Write in second person ("You...").
+   - Sharp and real — not generic motivational poster language.
+   - Do NOT use career brochure language or therapist tone.
+   - MUST BE WRITTEN IN ENGLISH.
+
+2. "links": An array of EXACTLY 3 objects, each with:
+   - "label": A short name for the resource (e.g., "Robotics Engineer", "Python for Beginners", "Ada Lovelace")
+   - "description": One sentence explaining what they'll find and why it's relevant to what they shared.
+   - "url": A Google Search URL in this exact format: "https://www.google.com/search?q=" + URL-encoded search terms. NEVER invent real URLs. Only use Google Search URLs.
+
+The 3 links MUST cover these 3 distinct pillars (one each):
+   - Pillar 1 — Career to Explore: a real job title or career path connected to what they shared
+   - Pillar 2 — Skill to Start: a beginner-friendly skill or tool they could actually try
+   - Pillar 3 — Real-World Inspiration: a real person, project, or organisation in their domain
+
+CRITICAL: Every link must be grounded in what the user actually discussed. No generic picks.
 """.strip()
 
-    fallback = "You're starting to notice what gives you energy. Keep following the signals that feel real."
+    schema = {
+        "type": "OBJECT",
+        "properties": {
+            "narrative": {"type": "STRING"},
+            "links": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "label":       {"type": "STRING"},
+                        "description": {"type": "STRING"},
+                        "url":         {"type": "STRING"},
+                    },
+                    "required": ["label", "description", "url"],
+                },
+            },
+        },
+        "required": ["narrative", "links"],
+    }
+
+    fallback: Dict[str, Any] = {
+        "narrative": (
+            "You're building something real. The signals in your conversations point somewhere specific — "
+            "and that's exactly where the interesting work lives. "
+            "Every expert in this space started by following exactly the kind of pull you're feeling. "
+            "The next move is closer than you think."
+        ),
+        "links": [
+            {
+                "label": "Career Explorer",
+                "description": "Search for real roles that match your interests and see what people actually do day-to-day.",
+                "url": "https://www.google.com/search?q=career+exploration+for+teens",
+            },
+            {
+                "label": "Beginner Skill to Try",
+                "description": "Find a beginner-friendly project or tutorial to build your first real skill.",
+                "url": "https://www.google.com/search?q=beginner+project+for+teens",
+            },
+            {
+                "label": "People Doing This Work",
+                "description": "See real people who've turned a similar interest into a career.",
+                "url": "https://www.google.com/search?q=inspiring+young+professionals+careers",
+            },
+        ],
+    }
 
     try:
         response = client.models.generate_content(
             model=TEXT_MODEL,
             contents=prompt,
-            config=types.GenerateContentConfig(temperature=0.7),
+            config=types.GenerateContentConfig(
+                temperature=0.75,
+                response_mime_type="application/json",
+                response_schema=schema,
+            ),
         )
-        text = (response.text or "").strip()
-        return text or fallback
+        data = json.loads((response.text or "").strip())
+
+        narrative = (data.get("narrative") or "").strip()
+        links_raw = data.get("links") or []
+
+        # Validate: need narrative + at least 3 safe links
+        if not narrative:
+            return fallback
+
+        safe_links = []
+        for lnk in links_raw[:3]:
+            label = (lnk.get("label") or "").strip()
+            desc  = (lnk.get("description") or "").strip()
+            url   = (lnk.get("url") or "").strip()
+            # Enforce Google Search URLs only — never allow raw site URLs
+            if not url.startswith("https://www.google.com/search?q="):
+                # Salvage: convert whatever the model gave into a search URL
+                import urllib.parse
+                query = label or "career exploration"
+                url = "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
+            if label and desc:
+                safe_links.append({"label": label, "description": desc, "url": url})
+
+        if len(safe_links) < 1:
+            return fallback
+
+        # Pad to 3 if model returned fewer
+        while len(safe_links) < 3:
+            safe_links.append(fallback["links"][len(safe_links)])
+
+        return {"narrative": narrative, "links": safe_links[:3]}
+
     except Exception as e:
-        logger.error("Hero recap generation failed: %s", e)
+        logger.error("Hero story generation failed: %s", e)
         return fallback
 
 # ============================================================
