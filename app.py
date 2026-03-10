@@ -37,7 +37,7 @@ from lib.outcome_engine import generate_intro_message, synthesize_single_tile
 from lib.storybook_generator import (
     generate_custom_avatar,
     generate_future_postcard,
-    generate_hero_recap,
+    generate_hero_story,
     generate_identity_comic,
     generate_pixel_art_illustration,
 )
@@ -93,7 +93,7 @@ css = """
   --font-ui:'Inter',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   --font-display:'Press Start 2P',cursive;
   --font-accent:'Orbitron',sans-serif;
-  --control-h:44px;--container-w:1300px;
+  --control-h:44px;--container-w:1200px;
 }
 
 *,*::before,*::after{box-sizing:border-box}
@@ -375,14 +375,14 @@ SESSION_STORES_LOCK = threading.Lock()
 def default_session_store() -> Dict[str, Any]:
     """Returns a fresh session state dictionary."""
     return {
-        "history": [], 
-        "pending_turns": [], # QUEUE: Tracks indices of user messages waiting for a reply
+        "history": [],
+        "pending_turns": [],
         "superpowers": {},
         "tiles": [],
         "chat_turn_count": 0,
         "tile_count": 0,
         "avatar_b64": "",
-        "recap": "",
+        "story": {},        # replaces plain-text recap: {narrative: str, links: list}
         "comic_panels": [],
         "postcard": {},
         "last_canvas_error": None,
@@ -885,7 +885,7 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
     """Generates the HTML for the Story tab."""
     with store["lock"]:
         avatar_b64 = store.get("avatar_b64", "")
-        recap = store.get("recap", "")
+        story = deepcopy(store.get("story", {}))
         superpowers = deepcopy(store.get("superpowers", {}))
         comic_panels = deepcopy(store.get("comic_panels",[]))
         postcard = deepcopy(store.get("postcard", {}))
@@ -903,7 +903,7 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
         }
         busy_text = labels.get(artifact_stage, "🎛️ Updating your exploration story...")
 
-    has_content = bool(avatar_b64 or recap or comic_panels or postcard)
+    has_content = bool(avatar_b64 or story or comic_panels or postcard)
 
     if not has_content and not busy_text and not error_text:
         return """
@@ -920,11 +920,31 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
     if error_text:
         sections.append(f"<div class='identity-note'>⚠️ {safe_text(error_text)}</div>")
 
-    if recap:
+    if story and story.get("narrative"):
+        narrative_html = safe_text(story["narrative"])
+        # Build 3 resource link cards
+        pillar_icons = ["🎯", "🛠️", "🌟"]
+        link_cards_html = []
+        for i, lnk in enumerate(story.get("links") or []):
+            icon = pillar_icons[i] if i < len(pillar_icons) else "🔗"
+            label = safe_text(lnk.get("label", "Explore"))
+            desc  = safe_text(lnk.get("description", ""))
+            url   = html.escape(str(lnk.get("url", "")), quote=True)
+            link_cards_html.append(f"""
+            <div class='chat-skill-card'>
+                <div class='chat-skill-icon'>{icon}</div>
+                <div class='chat-skill-body'>
+                    <div class='chat-skill-name'>{label}</div>
+                    <div class='chat-skill-try'>{desc}</div>
+                    <a class='chat-skill-link' href='{url}' target='_blank' rel='noopener noreferrer'>🔍 Search</a>
+                </div>
+            </div>
+            """)
         sections.append(f"""
         <div class='story-section'>
-            <div class='story-section-label'>📖 Your Story</div>
-            <div class='story-narrative'>{safe_text(recap)}</div>
+            <div class='story-section-label'>📖 Your Exploration Story</div>
+            <div class='story-narrative'>{narrative_html}</div>
+            <div style='margin-top:12px'>{''.join(link_cards_html)}</div>
         </div>
         """)
 
@@ -990,7 +1010,15 @@ def render_identity_lab(store: Dict[str, Any]) -> str:
 # BACKGROUND ARTIFACT GENERATION
 # =====================================================================
 def plan_artifacts(store: Dict[str, Any]) -> List[str]:
-    """Determines which artifacts need to be generated based on turn count."""
+    """Determines which artifacts need to be generated based on turn count.
+
+    Refresh cadence (after turn 2):
+      - tile:     every turn (always fresh)
+      - recap:    every 2 turns — synced with comic so Story tab is always coherent
+      - comic:    every 2 turns — alternates with postcard to spread image gen load
+      - postcard: every 3 turns
+      - avatar:   once (generated on turn 1, regenerated only if missing)
+    """
     with store["lock"]:
         turn = int(store.get("chat_turn_count", 0))
         avatar_missing = not bool(store.get("avatar_b64"))
@@ -1004,19 +1032,20 @@ def plan_artifacts(store: Dict[str, Any]) -> List[str]:
         return jobs
 
     if turn == 2:
-        jobs = ["tile", "recap"]
+        jobs = ["tile", "recap", "comic"]
         if avatar_missing:
             jobs.append("avatar")
-        jobs.append("comic")
         return jobs
 
+    # turn >= 3: tile every turn; recap + comic together every 2 turns; postcard every 3
     jobs = ["tile"]
-    if turn <= 4 or turn % 2 == 0:
+    if turn % 2 == 0:
         jobs.append("recap")
+        jobs.append("comic")
     if avatar_missing:
         jobs.append("avatar")
-    if comic_missing or turn % 2 == 1:
-        jobs.append("comic")
+    if comic_missing:
+        jobs.append("comic")  # ensure comic is generated at least once
     if postcard_missing or turn % 3 == 0:
         jobs.append("postcard")
     return jobs
@@ -1117,10 +1146,13 @@ def artifact_worker(store: Dict[str, Any]) -> None:
                         store["artifact_updated_at"] = time.time()
 
             elif kind == "recap":
-                recap = generate_hero_recap(deepcopy(job["superpowers"]))
+                story_data = generate_hero_story(
+                    deepcopy(job["superpowers"]),
+                    recent_chat=deepcopy(job["history_chat"]),
+                )
                 with store["lock"]:
-                    if recap:
-                        store["recap"] = recap
+                    if story_data:
+                        store["story"] = story_data
                     store["last_identity_error"] = None
                     store["artifact_updated_at"] = time.time()
 
@@ -1299,9 +1331,28 @@ def run_turn(
                 store["last_seen_at"] = time.time()
 
         with store["lock"]:
+            turn_count = int(store.get("chat_turn_count", 0))
             # 6. Build history ONLY up to the message we are responding to
             backend_history = build_backend_history(store["history"][:msg_index], MAX_CHAT_CONTEXT_MESSAGES)
             superpowers = deepcopy(store.get("superpowers", {}))
+
+        # Periodic superpowers refresh: re-read the full conversation every 4 turns
+        # so the psychology profile evolves with what the child revealed in conversation.
+        if turn_count > 0 and turn_count % 4 == 0:
+            try:
+                logger.info("Refreshing superpowers at turn %s...", turn_count)
+                refreshed_text = " ".join(
+                    m.get("text", "") for m in backend_history[-8:] if m.get("role") == "user"
+                ).strip()
+                if refreshed_text:
+                    refreshed = map_narrative_to_superpowers(refreshed_text) or {}
+                    if len(refreshed) >= 9:  # all required fields present
+                        with store["lock"]:
+                            store["superpowers"] = refreshed
+                            superpowers = deepcopy(refreshed)
+                        logger.info("Superpowers refreshed successfully at turn %s.", turn_count)
+            except Exception as e:
+                logger.warning("Superpowers refresh failed (non-critical): %s", e)
 
         accumulated_text = ""
         inline_images: List[str] = []
@@ -1311,8 +1362,9 @@ def run_turn(
             stream = generate_socratic_stream(
                 superpowers,
                 backend_history,
-                (pending or {}).get("bytes"),
-                (pending or {}).get("mime", "image/jpeg"),
+                turn_count=turn_count,
+                image_bytes=(pending or {}).get("bytes"),
+                image_mime=(pending or {}).get("mime", "image/jpeg"),
             )
         except Exception as e:
             logger.exception("Stream setup error: %s", e)
