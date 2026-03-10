@@ -2,7 +2,6 @@
 Storybook Generator
 Handles the generation of personalized, visual-first story artifacts:
 Hero Recaps, Custom Avatars, Identity Comics, and Future Postcards.
-Enforces Split-Language Architecture for multilingual support.
 """
 
 import base64
@@ -155,14 +154,10 @@ Requirements:
 - Be highly specific to their actual interests. Do not use generic templates.
 - Name a real pattern emerging in how they think or work.
 - Do not use career brochure language or sound like a therapist.
-
-CRITICAL LANGUAGE RULE: 
-Analyze the recent conversation. Identify the primary language being used. 
-If the user's most recent message is very short (e.g., 'yes', 'no', 'not yet', a name), ignore it for language detection and match the language of the broader conversation. 
-You MUST write the recap entirely in that specific language.
+- MUST BE WRITTEN IN ENGLISH.
 """.strip()
 
-    fallback = "You’re starting to notice what gives you energy. Keep following the signals that feel real."
+    fallback = "You're starting to notice what gives you energy. Keep following the signals that feel real."
 
     try:
         response = client.models.generate_content(
@@ -299,17 +294,13 @@ Panel arc:
 3. Direction — a grounded next scene showing where this specific interest could lead.
 
 For each panel provide:
-- caption: one short line, max 8 words.
-- image_prompt: vivid, concrete visual scene description.
+- caption: one short line, max 8 words. MUST BE IN ENGLISH.
+- image_prompt: vivid, concrete visual scene description. MUST BE IN ENGLISH.
 
 Constraints:
 - exactly 3 panels.
 - grounded in real-world settings.
 - visual continuity across the three panels.
-
-CRITICAL LANGUAGE RULES:
-1. Analyze the recent conversation. Identify the primary language being used. If the user's most recent message is very short (e.g., 'yes', 'no', 'not yet', a name), ignore it for language detection and match the language of the broader conversation. You MUST write the "caption" entirely in that specific language.
-2. HOWEVER, the "image_prompt" field MUST ALWAYS be written in English. Image generation models do not understand other languages.
 """.strip()
 
     schema = {
@@ -380,11 +371,7 @@ Rules:
 - MUST reference a specific detail from their recent chat or interests.
 - warm, calm, believable.
 - start with "You're" or "You".
-
-CRITICAL LANGUAGE RULE: 
-Analyze the recent conversation. Identify the primary language being used. 
-If the user's most recent message is very short (e.g., 'yes', 'no', 'not yet', a name), ignore it for language detection and match the language of the broader conversation. 
-You MUST write the postcard line entirely in that specific language.
+- MUST BE WRITTEN IN ENGLISH.
 """.strip()
 
     try:
