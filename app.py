@@ -34,6 +34,7 @@ except ImportError:
 from lib.psychology_codex import map_narrative_to_superpowers
 from lib.coaching_agent import generate_socratic_stream
 from lib.outcome_engine import generate_intro_message, synthesize_single_tile
+from lib.shield import Shield
 from lib.storybook_generator import (
     generate_custom_avatar,
     generate_future_postcard,
@@ -373,6 +374,7 @@ body,.gradio-container{
 # =====================================================================
 SESSION_STORES: Dict[str, Dict[str, Any]] = {}
 SESSION_STORES_LOCK = threading.Lock()
+app_shield = Shield()
 
 def default_session_store() -> Dict[str, Any]:
     """Returns a fresh session state dictionary."""
@@ -1217,9 +1219,30 @@ def user_submit(
         text = str(user_message or "").strip()
         files = []
 
+    # 1. Strict input length cap via Shield
+    text = app_shield.check_input_length(text)
+
     if not text and not files:
         with store["lock"]:
             return gr.update(value={"text": "", "files": []}), _get_gradio_history(store), get_header_status_html(store)
+
+    client_ip = request.client.host if request and request.client else "unknown"
+
+    # 2. IP-based rate limiter (24 per minute via Shield)
+    if not app_shield.check_rate_limit(client_ip):
+        with store["lock"]:
+            fake_history = _get_gradio_history(store) + [{"role": "assistant", "content": "Whoa, that's a bit too fast! Please pause for a minute before sending more messages."}]
+            return gr.update(value={"text": "", "files": []}), fake_history, get_header_status_html(store, busy=False)
+
+    # 3. Stealth Spammer Detection & Token Protection (30 turns via Shield)
+    session_id = _session_id_from_request(request)
+    with store["lock"]:
+        current_turn_count = store.get("chat_turn_count", 0)
+        
+    if app_shield.should_halt_spammer(session_id, current_turn_count):
+        with store["lock"]:
+            fake_history = _get_gradio_history(store) + [{"role": "assistant", "content": "You've reached the end of this exploration journey! Thanks for chatting. 🚀"}]
+            return gr.update(value={"text": "", "files": []}), fake_history, get_header_status_html(store, busy=False)
 
     pending_image = None
     if files:
