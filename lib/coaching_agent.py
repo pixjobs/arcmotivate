@@ -77,13 +77,13 @@ def _safe_str(value: Any, fallback: str = "") -> str:
     text = str(value).strip()
     return text if text else fallback
 
-# Five interaction angles rotated by turn number — enforces structural variety (not just questions)
+# Five interaction angles rotated by turn number — enforces structural variety
 _INTERACTION_ANGLES = [
     "A direct question about what they would build or create if they had unlimited resources.",
-    "A supportive observation (NOT a question) highlighting a unique skill or trait they are naturally showing.",
-    "A \"Lateral Pivot\" question asking THEM to name a completely different hobby or interest they have, so you can explore how it might combine with their main passion.",
-    "A 'Yes, And...' challenge (NOT a question) connecting their passion to a real-world problem, but ONLY using interests or skills they have explicitly mentioned.",
-    "A statement (NOT a question) revealing an unexpected or hybrid career path that uses the exact skills they just talked about.",
+    "A supportive observation highlighting a unique skill or trait they are naturally showing, followed immediately by a short, casual hook like 'Does that sound like you?' or 'Have you ever noticed that about yourself?'",
+    "A curious, practical question asking them to imagine what a typical day doing this kind of work might actually look like, or what specific problem they'd want to tackle first.",
+    "A 'Yes, And...' challenge connecting their passion to a real-world problem, but ONLY using interests or skills they have explicitly mentioned.",
+    "A statement revealing an unexpected or hybrid career path that uses the exact skills they just talked about, ending with a quick engaging prompt like 'Could you see yourself doing something like that?'",
 ]
 
 # Five conversation stages — shifts coaching intent as turns progress
@@ -104,8 +104,8 @@ def _get_stage(turn_count: int) -> tuple:
             stage = (min_turn, *rest)
     return stage
 
-def _build_system_instruction(superpowers: Dict[str, Any], turn_count: int = 0) -> str:
-    """Builds the system prompt with turn-aware conversation stage and pre-computed question rotation."""
+def _build_system_instruction(superpowers: Dict[str, Any], turn_count: int = 0, user_latest_message: str = "") -> str:
+    """Builds the system prompt with turn-aware conversation stage, dynamic word target, and pre-computed question rotation."""
     # 1. Base Identity
     primary = _safe_str(superpowers.get("primary"), DEFAULT_PRIMARY)
     secondary = _safe_str(superpowers.get("secondary"), DEFAULT_SECONDARY)
@@ -135,6 +135,21 @@ def _build_system_instruction(superpowers: Dict[str, Any], turn_count: int = 0) 
     }
     visual_hint = gardner_visual_map.get(core_intelligence, "neon cityscapes, glowing pathways")
 
+    # 6. Dynamic Word Target — Expands if the user asks a direct question
+    is_asking_question = False
+    lower_msg = user_latest_message.strip().lower()
+    if lower_msg.endswith("?") or any(lower_msg.startswith(w) for w in ["how", "what", "why", "is", "can", "do", "does", "are", "could", "would"]):
+        is_asking_question = True
+
+    if is_asking_question:
+        word_limit = 80
+        brevity_rule = "1. BREVITY & UTILITY: You have up to 80 words. The user just asked a direct question. You MUST answer their specific question clearly and fully before moving on."
+        less_is_more_prefix = f"To stay under {word_limit} words"
+    else:
+        word_limit = 40
+        brevity_rule = "1. BREVITY: Conversational text must be under 40 words. No exceptions."
+        less_is_more_prefix = f"To stay under {word_limit} words"
+
     return f"""
 CRITICAL LANGUAGE OVERRIDE: You are a polyglot guide. ALWAYS match the user's language. Switch immediately when they clearly write a full sentence (10+ characters) in a new language. Never stay stuck in a previous language.
 The [VISUALIZE: <prompt>] tag text is the ONLY exception — always keep that in English.
@@ -152,16 +167,17 @@ Your coaching goal this turn: {stage_intent}.
 
 RULES (follow every single one, every single turn):
 
-1. BREVITY: Conversational text must be under 40 words. No exceptions.
+{brevity_rule}
 
-2. VOICE: Sharp, warm, and real. Zero therapist/teacher energy. Zero cringe slang. NEVER name a psychological framework or use clinical terms out loud (e.g., never say "VIA strength", "SDT", "growth mindset", "archetype").
+2. VOICE & CONTEXT: Sharp, warm, and real. Zero therapist/teacher energy. Zero cringe slang. NEVER name a psychological framework or use clinical terms out loud (e.g., never say "VIA strength", "SDT", "growth mindset", "archetype").
+   - CRITICAL: You MUST use British English spelling (e.g. "colour", "realise", "synthesise") and UK cultural context (e.g. "football" means soccer, use "university" or "uni" not "college").
 
 3. STRUCTURE — EXACTLY THIS ORDER every turn:
    a. [VISUALIZE: <a {visual_adj} neon pixel-art scene in English only — {visual_hint}, fitting a career exploration moment>]
    b. One short reflection linking their reply to a real career direction or way of working.
    c. If the CONVERSATION STAGE is "Closing", DO NOT ASK ANY QUESTIONS. Give a warm, final summary of their unique strengths and tell them to check out the "Story" and "Postcard" tabs on the right side of the screen to see what they built. Otherwise, generate ONE closing sentence following this exact instruction: {this_turn_angle}
 
-4. LESS IS MORE (CHOOSE ONE): To stay under 40 words, NEVER cram all psychology into one reply. Pick exactly ONE of the following lenses for your reflection in step 3b:
+4. LESS IS MORE (CHOOSE ONE): {less_is_more_prefix}, NEVER cram all psychology into one reply. Pick exactly ONE of the following lenses for your reflection in step 3b:
    - STRENGTH: Acknowledge their natural {via_strength}.
    - GROWTH: Reframe a challenge using this spirit: "{mindset}".
    - SKILL: Name 1 concrete skill they could start building toward {secondary}.
@@ -287,7 +303,18 @@ def generate_socratic_stream(
     (gemini-3.1-flash-lite-preview) does not emit inline_data image parts.
     User-uploaded images are accepted as input via image_bytes.
     """
-    system_instruction = _build_system_instruction(superpowers, turn_count=turn_count)
+    # Extract the user's latest message to determine word limits
+    user_latest = ""
+    for msg in reversed(chat_history):
+        if msg.get("role") == "user":
+            user_latest = str(msg.get("text", ""))
+            break
+
+    system_instruction = _build_system_instruction(
+        superpowers, 
+        turn_count=turn_count,
+        user_latest_message=user_latest
+    )
     contents = _build_contents(
         chat_history=chat_history,
         image_bytes=image_bytes,
