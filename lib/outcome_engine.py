@@ -194,6 +194,7 @@ Generate exactly ONE JSON object with these keys:
 CRITICAL LANGUAGE RULES:
 1. You MUST write all user-facing text (category, title, content, skill_tags, skill_nudge, link labels) in the EXACT SAME LANGUAGE that the user is speaking in the "Recent interaction" above.
 2. HOWEVER, the "image_prompt" field MUST ALWAYS be written in English. Image generation models do not understand other languages.
+3. If writing in English, you MUST use British English spelling (e.g., "colour", "realise") and UK cultural context (e.g., "football" means soccer, use "university" or "uni" not "college").
 
 Hard rules:
 - No fantasy
@@ -359,8 +360,9 @@ Output requirements:
 - Do NOT sound like a therapist, teacher, or generic assistant.
 
 CRITICAL LANGUAGE RULES:
-1. The text inside the[VISUALIZE: <prompt>] marker MUST ALWAYS be in English. Image generators only understand English.
+1. The text inside the [VISUALIZE: <prompt>] marker MUST ALWAYS be in English. Image generators only understand English.
 2. The rest of the intro text should be in English.
+3. You MUST use British English spelling (e.g., "colour", "realise") and UK cultural context.
 
 Output JSON only.
 """.strip()

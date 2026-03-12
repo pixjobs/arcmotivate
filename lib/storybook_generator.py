@@ -116,7 +116,8 @@ def _visual_style_guide() -> str:
     return (
         "Style: polished pixel-art / illustrated synthwave hybrid, grounded futuristic mood, "
         "clean silhouettes, expressive lighting, subtle neon accents, emotionally readable scenes, "
-        "no text, no logos, no watermark."
+        "no text, no logos, no watermark. CRITICAL: Use UK cultural context only. "
+        "NO American footballs or helmets, NO baseball imagery, NO high-school letterman jackets, NO Americanisms."
     )
 
 def _story_context_block(user_profile: Dict[str, Any], recent_chat: Optional[List[Dict[str, Any]]] = None) -> str:
@@ -166,7 +167,8 @@ Your output must be JSON with exactly 2 keys:
    - Write in second person ("You...").
    - Sharp and real — not generic motivational poster language.
    - Do NOT use career brochure language or therapist tone.
-   - MUST BE WRITTEN IN ENGLISH.
+   - MUST BE WRITTEN IN BRITISH ENGLISH (e.g., "colour", "realise").
+   - Frame scenes in a UK cultural context (e.g., "football" means soccer, use "university" or "uni" not "college").
 
 2. "links": An array of EXACTLY 3 objects, each with:
    - "label": A short name for the resource (e.g., "Robotics Engineer", "Python for Beginners", "Ada Lovelace")
@@ -232,7 +234,7 @@ CRITICAL: Every link must be grounded in what the user actually discussed. No ge
             model=TEXT_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
-                temperature=0.75,
+                temperature=0.9,
                 response_mime_type="application/json",
                 response_schema=schema,
             ),
