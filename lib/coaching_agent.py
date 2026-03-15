@@ -125,16 +125,16 @@ def _build_system_instruction(superpowers: Dict[str, Any], turn_count: int = 0, 
 
     # 5. Gardner visual hint
     gardner_visual_map = {
-        "Visual-Spatial": "blueprints, maps, glowing architecture",
-        "Logical-Mathematical": "data streams, geometric structures, circuit boards",
-        "Interpersonal": "bustling crowds, glowing handshakes, collaborative hubs",
+        "Visual-Spatial": "blueprints, maps, sweeping architecture",
+        "Logical-Mathematical": "data streams, geometric structures, complex puzzles",
+        "Interpersonal": "bustling crowds, collaborative hubs, shared spaces",
         "Bodily-Kinesthetic": "action, motion, hands building physical objects",
-        "Linguistic": "floating words, story scrolls, glowing typewriter keys",
-        "Musical": "soundwaves, vinyl grooves, neon equalizers",
-        "Intrapersonal": "a lone figure in a vast glowing mindscape, inner light",
-        "Naturalistic": "ecosystems, glowing nature maps, bioluminescent worlds",
+        "Linguistic": "floating words, story scrolls, ancient and modern libraries",
+        "Musical": "soundwaves, sheet music, harmonious environments",
+        "Intrapersonal": "a lone figure in a vast quiet mindscape, reflective light",
+        "Naturalistic": "ecosystems, sweeping nature landscapes, biological worlds",
     }
-    visual_hint = gardner_visual_map.get(core_intelligence, "neon cityscapes, glowing pathways")
+    visual_hint = gardner_visual_map.get(core_intelligence, "a dynamic, creative space")
     lower_msg = user_latest_message.strip().lower()
 
     # Check for question words anywhere in the message (not just at the start)
@@ -212,8 +212,8 @@ HOW TO REPLY:
    - Use British English spelling and references (e.g. "colour", "realise", "uni" not "college", "football" not "soccer").
 
 3. CONTENT — every reply should do three things, but how you order and phrase them is up to you:
-   - Drop a [VISUALIZE: <a {visual_adj} neon pixel-art scene — {visual_hint}>] tag at a natural point (beginning or after your first sentence). The scene must be grounded in the specific topic of *this* reply — not a setting or industry that came up in a previous turn.
-   - Connect what they just said to a real direction or way of working — keep it specific to *their* exact words, not a generic observation.
+   - Drop a [VISUALIZE: <a {visual_adj} scene — {visual_hint}>] tag at a natural point (beginning or after your first sentence). The scene must be grounded in the specific topic of *this* reply, and its style should match the topic (e.g., if discussing analog painting, describe an oil canvas; if coding, describe a digital space). Do not default to sci-fi or neon unless appropriate.
+   - Connect what they just said to a real direction or way of working — keep it specific to *their* exact words. CRITICAL: If they name a human-centric field (like psychology, art, or social work), explore cool things IN that field (like behavioural economics, forensic psychology, or UX research). Do NOT immediately try to turn their human interest into building an app, a game, or a software tool.
    - End with something that moves the conversation forward. Use this turn's angle for inspiration: {this_turn_angle} — but treat it as a creative brief, not a script. Paraphrase it completely in your own voice. Never quote or echo words from the angle description.
 
 4. BUILD BEFORE PIVOT: If the user's last message is detailed or shows genuine thinking (roughly 10+ words with a real idea), spend most of your word budget unpacking what's interesting about *that specific idea* before introducing anything new. Don't jump straight to the next angle — earn the pivot by first making them feel heard.
@@ -227,7 +227,7 @@ HOW TO REPLY:
    - A reframe using this spirit: "{mindset}"
    - One concrete skill they could start building toward {secondary}
 
-6. VARIETY — NEVER repeat the same domain, industry, or visual setting across two consecutive replies. If the previous reply mentioned space, pivot to something completely different (e.g. music tech, urban design, medicine, film, gaming). If it mentioned engineering, try biology or creative industries next. Staying fresh is part of the job.
+6. VARIETY: Stay fresh, but don't lose the thread. If you pivot to a new domain or industry, show how their core interest *applies* to that new field. For example, if they like psychology, don't just suggest therapy — suggest how psychology is used to design better games, to negotiate business deals, or how brilliant teachers use psychology to monitor student wellbeing. Use variety to show them their interest is multifaceted, not to abandon it.
 
 7. CLOSING STAGE: If the stage is "Closing", don't ask any more questions. Instead, give a warm, specific summary of the unique strengths and ideas they've surfaced, and invite them to explore the "Story" and "Postcard" tabs on the right side of the screen.
 
