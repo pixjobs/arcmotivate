@@ -234,7 +234,7 @@ CRITICAL: Every link must be grounded in what the user actually discussed. No ge
             model=TEXT_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
-                temperature=0.9,
+                temperature=0.75,
                 response_mime_type="application/json",
                 response_schema=schema,
             ),
@@ -384,7 +384,7 @@ def generate_identity_comic(
     client = get_client()
 
     prompt = f"""
-You are creating a 3-panel visual story for a young person aged 8 to 18.
+You are creating a 3-panel visual story for a young person aged 8 to 12.
 
 {_story_context_block(user_profile, recent_chat)}
 
@@ -484,15 +484,21 @@ Rules:
             contents=caption_prompt,
             config=types.GenerateContentConfig(temperature=0.75),
         )
-        caption = (response.text or "").strip().strip('"')
+        raw = (response.text or "").strip().strip('"')
+        # Enforce 15-word max — trim gracefully rather than relying on the model
+        words = raw.split()
+        caption = " ".join(words[:15]) + ("…" if len(words) > 15 else "")
     except Exception as e:
         logger.exception("Postcard caption failed: %s", e)
         caption = "You're still exploring, but you trust your own signals more now."
 
+    context = _story_context_block(user_profile, recent_chat)
     image_prompt = f"""
 A cinematic storybook postcard scene showing the same young person a little further along in their journey.
 Grounded future setting, calm confidence, open horizon.
-CRITICAL: Include visual hints of their specific interests: ({profile['interests']}).
+CRITICAL: The image must be visually consistent with the specific topics and interests in this context:
+{context}
+Include concrete visual hints of their actual interests and the themes they discussed — not generic future imagery.
 The image should feel like continuation, not fantasy victory imagery.
 """.strip()
 
