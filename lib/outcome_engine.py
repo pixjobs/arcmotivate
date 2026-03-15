@@ -15,7 +15,7 @@ from google.genai import types
 logger = logging.getLogger(__name__)
 
 TILE_MODEL = "gemini-3-flash-preview"
-INTRO_MODEL = "gemini-3.1-flash-lite-preview"
+INTRO_MODEL = "gemini-3-flash-preview"
 
 DEFAULT_LINK = {
     "label": "Explore Careers",

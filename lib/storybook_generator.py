@@ -18,8 +18,8 @@ from lib.image_utils import compress_generated_image
 logger = logging.getLogger(__name__)
 
 # Use the fast models consistently
-TEXT_MODEL = "gemini-3.1-flash-lite-preview"
-STRUCTURED_MODEL = "gemini-3.1-flash-lite-preview"
+TEXT_MODEL = "gemini-3-flash-preview"
+STRUCTURED_MODEL = "gemini-3-flash-preview"
 IMAGE_MODEL = "gemini-3.1-flash-image-preview"
 
 # Global client cache for fast background thread execution
@@ -114,10 +114,10 @@ def _recent_history_text(recent_chat: Optional[List[Dict[str, Any]]], limit: int
 def _visual_style_guide() -> str:
     """Returns the global visual style prompt for image generation."""
     return (
-        "Style: polished pixel-art / illustrated synthwave hybrid, grounded futuristic mood, "
-        "clean silhouettes, expressive lighting, subtle neon accents, emotionally readable scenes, "
-        "no text, no logos, no watermark. CRITICAL: Use UK cultural context only. "
-        "NO American footballs or helmets, NO baseball imagery, NO high-school letterman jackets, NO Americanisms."
+        "Style: high-quality evocative illustration. The aesthetic must match the subject matter "
+        "(e.g., analog tools and natural lighting for traditional art or nature; digital/clean environments for tech). "
+        "Clean silhouettes, expressive lighting, emotionally readable scenes, no text, no logos, no watermark. "
+        "CRITICAL: Use UK cultural context only. NO American footballs or helmets, NO baseball imagery, NO high-school letterman jackets."
     )
 
 def _story_context_block(user_profile: Dict[str, Any], recent_chat: Optional[List[Dict[str, Any]]] = None) -> str:
@@ -349,8 +349,8 @@ Character signals:
 Requirements:
 - Portrait only.
 - Expressive, thoughtful, cool.
-- Grounded futuristic styling.
-- MUST include subtle visual hints of their specific interests (e.g., if they like music, maybe they have headphones; if they like coding, maybe a glowing visor).
+- Grounded styling appropriate to their interest (analog or digital).
+- MUST include subtle visual hints of their specific interests (e.g., if they like music, maybe they hold an instrument; if painting, a paintbrush; if coding, a screen or keyboard).
 - No costumes, no fantasy armor, no magic effects.
 """.strip()
 
@@ -440,7 +440,7 @@ Constraints:
     except Exception as e:
         logger.error("Comic panel spec generation failed: %s", e)
         panels_raw =[
-            {"caption": "Something caught your attention.", "image_prompt": "A young person leaning over a desk, focused on a project, evening light, grounded futuristic room"},
+            {"caption": "Something caught your attention.", "image_prompt": "A young person leaning over a desk, focused on a project, inspiring workspace"},
             {"caption": "You started testing it.", "image_prompt": "The same young person trying things hands-on, sketching or experimenting at a desk"},
             {"caption": "Now the path feels clearer.", "image_prompt": "The same young person looking at a wall full of ideas starting to connect, calm confidence"},
         ]
@@ -495,11 +495,11 @@ Rules:
     context = _story_context_block(user_profile, recent_chat)
     image_prompt = f"""
 A cinematic storybook postcard scene showing the same young person a little further along in their journey.
-Grounded future setting, calm confidence, open horizon.
+Grounded, inspiring setting appropriate to their specific field, calm confidence, open horizon.
 CRITICAL: The image must be visually consistent with the specific topics and interests in this context:
 {context}
-Include concrete visual hints of their actual interests and the themes they discussed — not generic future imagery.
-The image should feel like continuation, not fantasy victory imagery.
+Include concrete visual hints of their actual interests and the themes they discussed (e.g. natural landscapes, art studios, or tech spaces depending on the topic). 
+The image should feel like continuation, not fantasy victory imagery. Do not force futuristic elements unless the topic demands it.
 """.strip()
 
     # Compress postcard to 512px
