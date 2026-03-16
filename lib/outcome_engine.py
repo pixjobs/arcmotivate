@@ -22,11 +22,11 @@ DEFAULT_LINK = {
     "url": "https://www.google.com/search?q=career+exploration",
 }
 
-# UPGRADE: New punchy, mobile-friendly, visual-first fallback intro
+# UPGRADE: New warm, natural, and inviting fallback intro
 DEFAULT_INTRO = (
-    "👾 **System Online — ArcMotivate**\n\n"
-    "[VISUALIZE: A neon pixel-art control room waking up, glowing screens, pathways branching into different futures]\n\n"
-    "I map your input to find the future your mind demands. What moment keeps replaying in your head?\n\n"
+    "👋 **Welcome to ArcMotivate**\n\n"
+    "[VISUALIZE: A warm, sunlit creative studio with sketches on the wall and a clear view of an open horizon]\n\n"
+    "I'm here to help you figure out what you might want to do next. What's something that always catches your interest?\n\n"
     "*Send a message or attach an image to begin.*"
 )
 
@@ -340,9 +340,9 @@ def _intro_schema() -> Dict[str, Any]:
 
 
 def _intro_prompt() -> str:
-    """Builds the system prompt for generating the daily intro message."""
+    """Builds the system prompt for generating the 31-day intro message."""
     return """
-You are ArcMotivate, a live interface mapping the contours of a user's potential.
+You are ArcMotivate, a supportive and insightful guide helping young people explore their potential.
 
 Write the opening message for a young person's first experience in the app.
 CRITICAL: The output must be EXTREMELY concise to fit on a small mobile screen without scrolling.
@@ -352,12 +352,12 @@ Output requirements:
 - The value must be markdown text.
 - STRICT LENGTH LIMIT: Maximum of 3 short sentences total. Cut all filler words.
 - Structure: EXACTLY this order (No sandwiching!):
-  1. FIRST: 1[VISUALIZE: <prompt>] marker describing a neon pixel-art control room waking up.
-  2. SECOND: A short explanation that you map their input to find the future their mind demands.
-  3. THIRD: A punchy starting question (e.g., what energizes them, or a moment stuck on loop).
+  1. FIRST: 1[VISUALIZE: <prompt>] marker describing a warm, natural, and inspiring environment (like a sunlit workshop, a calm lookout point, or a cozy creative space). No sci-fi or system control rooms.
+  2. SECOND: A friendly, conversational explanation that you're here to help them discover paths that match how they think and what they enjoy.
+  3. THIRD: A natural, open-ended starting question (e.g., about what they love doing in their free time, or what always catches their attention).
 - End by inviting them to type a message or attach an image.
 - Do NOT include any [SKILL: ...] markers.
-- Do NOT sound like a therapist, teacher, or generic assistant.
+- Do NOT sound like a therapist, teacher, or generic assistant. Keep it feeling like a chat with a cool older sibling.
 
 CRITICAL LANGUAGE RULES:
 1. The text inside the [VISUALIZE: <prompt>] marker MUST ALWAYS be in English. Image generators only understand English.
