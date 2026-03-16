@@ -372,7 +372,7 @@ def generate_socratic_stream(
     config = types.GenerateContentConfig(
         system_instruction=system_instruction,
         temperature=DEFAULT_TEMPERATURE,
-        max_output_tokens=150,
+        max_output_tokens=400,
         safety_settings=[
             types.SafetySetting(
                 category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
