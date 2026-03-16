@@ -55,9 +55,8 @@ APP_TITLE = "ArcMotivate"
 CACHE_BUCKET_NAME = os.environ.get("CACHE_BUCKET_NAME")
 
 FALLBACK_OPENING_MSG = (
-    "👾 **System Online — ArcMotivate**\n\n"
-    "[VISUALIZE: A neon pixel-art control room waking up, glowing screens, pathways branching into different futures]\n\n"
-    "I map your input to find the future your mind demands. What moment keeps replaying in your head?\n\n"
+    "👋 **Welcome to ArcMotivate**\n\n"
+    "I'm here to help you figure out what you might want to do next. What's something that always catches your interest?\n\n"
     "*Send a message or attach an image to begin.*"
 )
 
@@ -690,88 +689,99 @@ def render_interleaved_content(raw_text: str, visual_state: str = "rendered") ->
     return "\n\n".join(parts)
 
 # =====================================================================
-# MULTI-CONTAINER BLOB CACHING FOR RENDERED INTRO MESSAGE (31-DAY ROTATION)
+# MULTI-CONTAINER BLOB CACHING FOR NON-BLOCKING INTRO MESSAGES
 # =====================================================================
 _intro_lock = threading.Lock()
-_MEM_CACHE_INTRO: Optional[str] = None
-_MEM_CACHE_DATE: Optional[str] = None
+_INTRO_VARIANTS: List[str] = []
+_INTRO_INDEX = 0
 
-def get_rendered_opening_message() -> str:
-    """Generates or retrieves the 31-day rotating intro message."""
-    global _MEM_CACHE_INTRO, _MEM_CACHE_DATE
+def _generate_intros_background(num_variants: int = 5):
+    """Background thread to generate and cache intro variants."""
+    global _INTRO_VARIANTS
 
-    cycle_id = datetime.date.today().toordinal() // 31
-    today_str = f"cycle_{cycle_id}"
-    blob_filename = f"arc_intro_rendered_{today_str}.txt"
-    tmp_intro_file = f"/tmp/{blob_filename}"
+    logger.info("Background intro generator started. Target variants: %s", num_variants)
 
-    if _MEM_CACHE_INTRO and _MEM_CACHE_DATE == today_str:
-        return _MEM_CACHE_INTRO
+    for i in range(num_variants):
+        blob_filename = f"arc_intro_variant_{i}.txt"
+        tmp_intro_file = f"/tmp/{blob_filename}"
+        
+        variant_content = None
 
-    if os.path.exists(tmp_intro_file):
-        try:
-            with open(tmp_intro_file, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if content:
-                    _MEM_CACHE_INTRO = content
-                    _MEM_CACHE_DATE = today_str
-                    return content
-        except Exception as e:
-            logger.warning("Failed to read intro from local /tmp: %s", e)
-
-    with _intro_lock:
+        # 1. Check local /tmp cache
         if os.path.exists(tmp_intro_file):
-            with open(tmp_intro_file, "r", encoding="utf-8") as f:
-                _MEM_CACHE_INTRO = f.read().strip()
-                _MEM_CACHE_DATE = today_str
-                return _MEM_CACHE_INTRO
+            try:
+                with open(tmp_intro_file, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                if content:
+                    variant_content = content
+                    logger.info("Loaded intro variant %s from local /tmp.", i)
+            except Exception as e:
+                logger.warning("Failed to read intro variant %s from /tmp: %s", i, e)
 
-        if GCS_AVAILABLE and CACHE_BUCKET_NAME:
+        # 2. Check GCS Blob cache
+        if not variant_content and GCS_AVAILABLE and CACHE_BUCKET_NAME:
             try:
                 client = storage.Client()
                 bucket = client.bucket(CACHE_BUCKET_NAME)
                 blob = bucket.blob(blob_filename)
                 
                 if blob.exists():
-                    logger.info("Downloading today's cached intro message from GCS Blob...")
+                    logger.info("Downloading cached intro variant %s from GCS Blob...", i)
                     content = blob.download_as_text()
                     with open(tmp_intro_file, "w", encoding="utf-8") as f:
                         f.write(content)
-                    _MEM_CACHE_INTRO = content
-                    _MEM_CACHE_DATE = today_str
-                    return content
+                    variant_content = content
             except Exception as e:
-                logger.warning("Failed to read from GCS Blob: %s", e)
+                logger.warning("Failed to read variant %s from GCS Blob: %s", i, e)
 
-    try:
-        logger.info("Generating new intro message for %s via LLM...", today_str)
-        raw_msg = generate_intro_message()
-        
-        if raw_msg:
-            rendered_msg = render_interleaved_content(raw_msg, visual_state="rendered")
-            
+        # 3. Generate new if not cached
+        if not variant_content:
+            try:
+                logger.info("Generating new intro variant %s via LLM...", i)
+                raw_msg = generate_intro_message()
+                if raw_msg:
+                    # Render the interleaved content (blocking, but we are in a background thread)
+                    rendered_msg = render_interleaved_content(raw_msg, visual_state="rendered")
+                    
+                    with open(tmp_intro_file, "w", encoding="utf-8") as f:
+                        f.write(rendered_msg)
+                    variant_content = rendered_msg
+                    
+                    if GCS_AVAILABLE and CACHE_BUCKET_NAME:
+                        try:
+                            logger.info("Uploading new intro variant %s to GCS Blob...", i)
+                            client = storage.Client()
+                            bucket = client.bucket(CACHE_BUCKET_NAME)
+                            blob = bucket.blob(blob_filename)
+                            blob.upload_from_string(rendered_msg, content_type="text/html")
+                        except Exception as e:
+                            logger.warning("Failed to upload variant %s to GCS: %s", i, e)
+            except Exception as e:
+                logger.exception("Failed to generate intro variant %s: %s", i, e)
+
+        # Safely append to global variants list
+        if variant_content:
             with _intro_lock:
-                with open(tmp_intro_file, "w", encoding="utf-8") as f:
-                    f.write(rendered_msg)
-                _MEM_CACHE_INTRO = rendered_msg
-                _MEM_CACHE_DATE = today_str
-                
-            if GCS_AVAILABLE and CACHE_BUCKET_NAME:
-                try:
-                    logger.info("Uploading today's new intro to GCS Blob...")
-                    client = storage.Client()
-                    bucket = client.bucket(CACHE_BUCKET_NAME)
-                    blob = bucket.blob(blob_filename)
-                    blob.upload_from_string(rendered_msg, content_type="text/html")
-                except Exception as e:
-                    logger.warning("Failed to upload to GCS Blob: %s", e)
+                if variant_content not in _INTRO_VARIANTS:
+                    _INTRO_VARIANTS.append(variant_content)
+    
+    logger.info("Background intro generator finished. Total variants available: %s", len(_INTRO_VARIANTS))
 
-            return rendered_msg
-            
-    except Exception as e:
-        logger.exception("Failed to generate opening message: %s", e)
-        
-    return render_interleaved_content(FALLBACK_OPENING_MSG, visual_state="rendered")
+
+def get_rendered_opening_message() -> str:
+    """Returns the next available intro variant, cycling back to the start."""
+    global _INTRO_VARIANTS, _INTRO_INDEX
+    
+    with _intro_lock:
+        if not _INTRO_VARIANTS:
+            # If nothing is ready yet, return a safe fallback quickly
+            logger.info("No intro variants ready yet. Returning cached default fallback.")
+            return render_interleaved_content(FALLBACK_OPENING_MSG, visual_state="rendered")
+
+        # Cycle through the available variants
+        variant = _INTRO_VARIANTS[_INTRO_INDEX % len(_INTRO_VARIANTS)]
+        _INTRO_INDEX += 1
+        return variant
 
 # =====================================================================
 # UI RENDERING FUNCTIONS
@@ -854,7 +864,7 @@ def format_canvas(store: Dict[str, Any]) -> str:
                             f"rel='noopener noreferrer' class='tile-link'>🔗 {label}</a>"
                         )
 
-            skill_tags = tile.get("skill_tags") or[]
+            skill_tags: List[str] = tile.get("skill_tags") or []
             tags_html = ""
             if skill_tags:
                 tags_html = "<div class='tile-skill-tags'>" + "".join(
@@ -1380,7 +1390,7 @@ def run_turn(
             except Exception as e:
                 logger.warning("Superpowers refresh failed (non-critical): %s", e)
 
-        accumulated_text = ""
+        accumulated_text: str = ""
         inline_images: List[str] = []
         last_ui_flush = 0.0
 
@@ -1578,6 +1588,9 @@ with gr.Blocks(title=APP_TITLE) as demo:
     demo.load(handle_startup_load, outputs=chatbot)
 
 if __name__ == "__main__":
+    # Start the background intro generator process immediately
+    threading.Thread(target=_generate_intros_background, args=(5,), daemon=True).start()
+
     favicon = "assets/favicon.ico" if os.path.exists("assets/favicon.ico") else None
     port = int(os.environ.get("PORT", 8080))
 
