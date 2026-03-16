@@ -690,17 +690,18 @@ def render_interleaved_content(raw_text: str, visual_state: str = "rendered") ->
     return "\n\n".join(parts)
 
 # =====================================================================
-# MULTI-CONTAINER BLOB CACHING FOR RENDERED INTRO MESSAGE (DAILY ROTATION)
+# MULTI-CONTAINER BLOB CACHING FOR RENDERED INTRO MESSAGE (31-DAY ROTATION)
 # =====================================================================
 _intro_lock = threading.Lock()
 _MEM_CACHE_INTRO: Optional[str] = None
 _MEM_CACHE_DATE: Optional[str] = None
 
 def get_rendered_opening_message() -> str:
-    """Generates or retrieves the daily rotating intro message."""
+    """Generates or retrieves the 31-day rotating intro message."""
     global _MEM_CACHE_INTRO, _MEM_CACHE_DATE
 
-    today_str = datetime.date.today().isoformat()
+    cycle_id = datetime.date.today().toordinal() // 31
+    today_str = f"cycle_{cycle_id}"
     blob_filename = f"arc_intro_rendered_{today_str}.txt"
     tmp_intro_file = f"/tmp/{blob_filename}"
 
